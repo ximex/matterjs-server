@@ -20,10 +20,10 @@ export function parseNumber(number: string): number | bigint {
  */
 export function convertMatterToWebSocketTagBased(
     value: unknown,
-    model: ValueModel,
+    model: ValueModel | undefined,
     clusterModel: ClusterModel,
 ): unknown {
-    if (value === null) {
+    if (model === undefined || value === null) {
         return null;
     }
     if (Array.isArray(value) && model.type === "list") {

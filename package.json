@@ -1,8 +1,8 @@
 {
     "dependencies": {
-        "@matter/main": "0.13.0-alpha.0-20250405-7fc7db48",
-        "@matter/nodejs-ble": "0.13.0-alpha.0-20250405-7fc7db48",
-        "@project-chip/matter.js": "0.13.0-alpha.0-20250405-7fc7db48",
+        "@matter/main": "0.13.0-alpha.0-20250415-475996bb5",
+        "@matter/nodejs-ble": "0.13.0-alpha.0-20250415-475996bb5",
+        "@project-chip/matter.js": "0.13.0-alpha.0-20250415-475996bb5",
         "express": "^5.1.0",
         "ws": "^8.18.1"
     },
@@ -10,12 +10,12 @@
         "@eslint/compat": "^1.2.8",
         "@eslint/eslintrc": "^3.3.1",
         "@eslint/js": "^9.24.0",
-        "@typescript-eslint/eslint-plugin": "^8.29.0",
-        "@typescript-eslint/parser": "^8.29.0",
+        "@typescript-eslint/eslint-plugin": "^8.30.1",
+        "@typescript-eslint/parser": "^8.30.1",
         "@types/express": "^5.0.1",
-        "@types/node": "^22.14.0",
+        "@types/node": "^22.14.1",
         "@types/ws": "^8.18.1",
-        "eslint-import-resolver-typescript": "^4.3.1",
+        "eslint-import-resolver-typescript": "^4.3.2",
         "eslint-plugin-import": "^2.31.0",
         "eslint-plugin-node-import": "^1.0.4",
         "eslint-plugin-regexp": "^2.7.0",
