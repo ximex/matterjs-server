@@ -4,14 +4,14 @@ import { createServer } from "node:http";
 const logger = Logger.get("WebServer");
 
 export class WebServer {
-    #host: string;
+    #listenAddresses: string[] | null;
     #port: number;
     #server?: HttpServer;
     #handler: WebServerHandler[];
 
     constructor(config: WebServer.Config, handler: WebServerHandler[]) {
-        const { host, port } = config;
-        this.#host = host;
+        const { listenAddresses, port } = config;
+        this.#listenAddresses = listenAddresses;
         this.#port = port;
         this.#handler = handler;
     }
@@ -23,10 +23,14 @@ export class WebServer {
             await handler.register(this.#server);
         }
 
+        // Determine bind host: null/undefined means bind to all interfaces
+        const host = this.#listenAddresses?.[0] ?? undefined;
+        const displayHost = host ?? "0.0.0.0";
+
         let resolvedOrErrored = false;
         await new Promise<void>((resolve, reject) => {
-            server.listen({ host: "127.0.0.1", port: this.#port }, () => {
-                logger.info(`Webserver Listening on http://${this.#host}:${this.#port}`);
+            server.listen({ host, port: this.#port }, () => {
+                logger.info(`Webserver Listening on http://${displayHost}:${this.#port}`);
                 if (!resolvedOrErrored) {
                     resolvedOrErrored = true;
                     resolve();
@@ -53,7 +57,8 @@ export class WebServer {
 
 export namespace WebServer {
     export interface Config {
-        host: string;
+        /** IP addresses to bind to. null means bind to all interfaces. */
+        listenAddresses: string[] | null;
         port: number;
     }
 }

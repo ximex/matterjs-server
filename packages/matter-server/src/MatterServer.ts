@@ -1,8 +1,22 @@
 import { ConfigStorage, Environment, MatterController, WebSocketControllerHandler } from "@matter-server/controller";
+import { getCliOptions } from "./cli.js";
 import { StaticFileHandler } from "./server/StaticFileHandler.js";
 import { WebServer } from "./server/WebServer.js";
 
+// Parse CLI options
+const cliOptions = getCliOptions();
+
 const env = Environment.default;
+
+// Apply CLI options to environment variables
+env.vars.set("storage.path", cliOptions.storagePath);
+if (cliOptions.bluetoothAdapter !== null) {
+    env.vars.set("ble.enable", true);
+    env.vars.set("ble.hci.id", cliOptions.bluetoothAdapter);
+}
+if (cliOptions.primaryInterface) {
+    env.vars.set("mdns.networkInterface", cliOptions.primaryInterface);
+}
 
 let controller: MatterController;
 let server: WebServer;
@@ -12,10 +26,7 @@ async function start() {
     config = await ConfigStorage.create(env);
     controller = await MatterController.create(env, config);
 
-    const host = env.vars.get("server.host", "localhost");
-    const port = env.vars.get("server.port", 5580);
-
-    server = new WebServer({ host, port }, [
+    server = new WebServer({ listenAddresses: cliOptions.listenAddress, port: cliOptions.port }, [
         new WebSocketControllerHandler(controller.commandHandler, config),
         new StaticFileHandler(),
     ]);

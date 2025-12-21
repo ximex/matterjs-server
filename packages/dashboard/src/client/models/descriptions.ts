@@ -1,4 +1,8 @@
-/* Descriptions for SDK Objects. This file is auto generated, do not edit. */
+/* 
+ * Descriptions for SDK Objects. 
+ * This file is auto-generated, DO NOT edit. 
+ */
+
 
 export interface DeviceType {
   id: number;

@@ -25,6 +25,7 @@
     "dependencies": {
         "@matter-server/controller": "*",
         "@matter-server/dashboard": "*",
+        "commander": "^14.0.2",
         "express": "^5.2.1"
     },
     "devDependencies": {
