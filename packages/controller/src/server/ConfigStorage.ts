@@ -33,14 +33,21 @@ export class ConfigStorage {
         this.#env = env;
     }
 
+    get service() {
+        if (this.#storageService === undefined) {
+            throw new Error("Storage not open");
+        }
+        return this.#storageService;
+    }
+
     async open() {
         this.#storageService = this.#env.get(StorageService);
         // Use the parameter "--storage-path=NAME-OR-PATH" to specify a different storage location
         // in this directory, use --storage-clear to start with an empty storage.
         // Or Env vars like MATTER_STORAGE_PATH and MATTER_STORAGE_CLEAR
         logger.info(`Storage location: ${this.#storageService.location} (Directory)`);
-        this.#storage = await this.#storageService.open("controller");
-        this.#configStore = this.#storage.createContext("config");
+        this.#storage = await this.#storageService.open("config");
+        this.#configStore = this.#storage.createContext("values");
 
         const fabricLabel = (await this.#configStore.has("fabricLabel"))
             ? await this.#configStore.get<string>("fabricLabel")

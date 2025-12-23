@@ -5,6 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ChipConfigData } from "../../src/converter/index.js";
 
+// Path to test fixtures (relative to package root since tests run from build dir)
+const FIXTURE_CHIP_JSON = join(process.cwd(), "test/converter/fixtures/chip.json");
+
 describe("ChipConfigData", () => {
     let testDir: string;
 
@@ -200,10 +203,15 @@ describe("ChipConfigData", () => {
             const config = new ChipConfigData();
             await config.load(testFile);
 
-            expect(config.generic.size).to.equal(3);
-            expect(config.generic.get("ExampleOpCredsCAKey1")).to.equal("a2V5MQ==");
-            expect(config.generic.get("ExampleCARootCert1")).to.equal("Y2VydDE=");
+            // ExampleOpCredsCAKey1 and ExampleCARootCert1 are now parsed as operationalCredentials
+            expect(config.generic.size).to.equal(1);
             expect(config.generic.get("SomeUnknownKey")).to.equal("dW5rbm93bg==");
+
+            // Verify operational credentials were parsed
+            const opcreds = config.getOperationalCredentials(1);
+            expect(opcreds).to.exist;
+            expect(opcreds!.rootCaKey).to.exist;
+            expect(opcreds!.rootCaCert).to.exist;
         });
 
         it("should preserve repl-config as-is", async () => {
@@ -556,7 +564,7 @@ describe("ChipConfigData", () => {
 
     describe("real chip.json", () => {
         it("should load the actual .ha1/chip.json file with all TLV decoded", async () => {
-            const chipJsonPath = join(process.cwd(), "../../.ha1/chip.json");
+            const chipJsonPath = FIXTURE_CHIP_JSON;
 
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
@@ -618,16 +626,21 @@ describe("ChipConfigData", () => {
                 expect(typeof entry.peerNodeId === "number" || typeof entry.peerNodeId === "bigint").to.be.true;
             }
 
-            // Verify generic keys (example certs/keys)
-            expect(config.generic.has("ExampleOpCredsCAKey1")).to.be.true;
-            expect(config.generic.has("ExampleCARootCert1")).to.be.true;
+            // Verify operational credentials are parsed (not in generic anymore)
+            expect(config.generic.has("ExampleOpCredsCAKey1")).to.be.false;
+            expect(config.generic.has("ExampleCARootCert1")).to.be.false;
+            expect(config.operationalCredentials.size).to.be.greaterThan(0);
+            const opCreds = config.getOperationalCredentials(1);
+            expect(opCreds).to.exist;
+            expect(opCreds!.rootCaKey).to.exist;
+            expect(opCreds!.rootCaCert).to.exist;
 
             // Verify repl-config preserved
             expect(config.replConfig).to.have.property("caList");
         });
 
         it("should round-trip the actual chip.json without data loss", async () => {
-            const originalPath = join(process.cwd(), "../../.ha1/chip.json");
+            const originalPath = FIXTURE_CHIP_JSON;
             const savedPath = join(testDir, "chip-roundtrip.json");
 
             const config = new ChipConfigData();
@@ -659,7 +672,7 @@ describe("ChipConfigData", () => {
 
     describe("certificate operations", () => {
         it("should decode RCAC from fabric", async () => {
-            const chipJsonPath = join(process.cwd(), "../../.ha1/chip.json");
+            const chipJsonPath = FIXTURE_CHIP_JSON;
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
 
@@ -672,7 +685,7 @@ describe("ChipConfigData", () => {
         });
 
         it("should decode ICAC from fabric", async () => {
-            const chipJsonPath = join(process.cwd(), "../../.ha1/chip.json");
+            const chipJsonPath = FIXTURE_CHIP_JSON;
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
 
@@ -685,7 +698,7 @@ describe("ChipConfigData", () => {
         });
 
         it("should decode NOC from fabric", async () => {
-            const chipJsonPath = join(process.cwd(), "../../.ha1/chip.json");
+            const chipJsonPath = FIXTURE_CHIP_JSON;
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
 
@@ -699,7 +712,7 @@ describe("ChipConfigData", () => {
         });
 
         it("should return undefined for non-existent fabric", async () => {
-            const chipJsonPath = join(process.cwd(), "../../.ha1/chip.json");
+            const chipJsonPath = FIXTURE_CHIP_JSON;
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
 
@@ -728,7 +741,7 @@ describe("ChipConfigData", () => {
         });
 
         it("should verify certificate chain successfully", async () => {
-            const chipJsonPath = join(process.cwd(), "../../.ha1/chip.json");
+            const chipJsonPath = FIXTURE_CHIP_JSON;
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
 
@@ -742,7 +755,7 @@ describe("ChipConfigData", () => {
         });
 
         it("should fail verification for non-existent fabric", async () => {
-            const chipJsonPath = join(process.cwd(), "../../.ha1/chip.json");
+            const chipJsonPath = FIXTURE_CHIP_JSON;
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
 
@@ -774,7 +787,7 @@ describe("ChipConfigData", () => {
         });
 
         it("should report certificate details from decoded certificates", async () => {
-            const chipJsonPath = join(process.cwd(), "../../.ha1/chip.json");
+            const chipJsonPath = FIXTURE_CHIP_JSON;
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
 
@@ -791,7 +804,7 @@ describe("ChipConfigData", () => {
 
     describe("getFabricConfig", () => {
         it("should extract fabric config from real chip.json", async () => {
-            const chipJsonPath = join(process.cwd(), "../../.ha1/chip.json");
+            const chipJsonPath = FIXTURE_CHIP_JSON;
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
 
@@ -817,7 +830,7 @@ describe("ChipConfigData", () => {
         });
 
         it("should return undefined for non-existent fabric", async () => {
-            const chipJsonPath = join(process.cwd(), "../../.ha1/chip.json");
+            const chipJsonPath = FIXTURE_CHIP_JSON;
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
 
@@ -843,7 +856,7 @@ describe("ChipConfigData", () => {
         });
 
         it("should have correct fabricId and nodeId from NOC", async () => {
-            const chipJsonPath = join(process.cwd(), "../../.ha1/chip.json");
+            const chipJsonPath = FIXTURE_CHIP_JSON;
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
 
@@ -859,7 +872,7 @@ describe("ChipConfigData", () => {
         });
 
         it("should have correct rootNodeId from RCAC", async () => {
-            const chipJsonPath = join(process.cwd(), "../../.ha1/chip.json");
+            const chipJsonPath = FIXTURE_CHIP_JSON;
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
 
@@ -874,7 +887,7 @@ describe("ChipConfigData", () => {
         });
 
         it("should extract IPK from group key set 0", async () => {
-            const chipJsonPath = join(process.cwd(), "../../.ha1/chip.json");
+            const chipJsonPath = FIXTURE_CHIP_JSON;
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
 
@@ -884,13 +897,160 @@ describe("ChipConfigData", () => {
             expect(fabricConfig).to.exist;
             expect(fabric).to.exist;
 
-            // IPK should come from the first valid key in group key set 0
-            const ipkKeySet = fabric!.keysDecoded.get(0);
-            expect(ipkKeySet).to.exist;
+            // IPK is always the same constant "temporary ipk 01" (the chip.json contains
+            // the derived operational IPK, but we return the plain IPK constant)
+            const expectedIpk = Bytes.fromHex("74656d706f726172792069706b203031");
+            expect(fabricConfig!.identityProtectionKey).to.deep.equal(expectedIpk);
+        });
+    });
 
-            const ipkEntry = ipkKeySet!.keys.find(k => k.key.byteLength === 16);
-            expect(ipkEntry).to.exist;
-            expect(fabricConfig!.identityProtectionKey).to.deep.equal(ipkEntry!.key);
+    describe("operationalCredentials", () => {
+        it("should parse ExampleOpCreds* keys into operationalCredentials", async () => {
+            const testFile = join(testDir, "opcreds-test.json");
+            await writeFile(
+                testFile,
+                JSON.stringify({
+                    "sdk-config": {
+                        ExampleOpCredsCAKey1: "cm9vdGNha2V5", // "rootcakey" in base64
+                        ExampleCARootCert1: "cm9vdGNhY2VydA==", // "rootcacert"
+                        ExampleOpCredsICAKey1: "aWNha2V5", // "icakey"
+                        ExampleCAIntermediateCert1: "aWNhY2VydA==", // "icacert"
+                    },
+                }),
+            );
+
+            const config = new ChipConfigData();
+            await config.load(testFile);
+
+            expect(config.operationalCredentials.size).to.equal(1);
+            expect(config.generic.size).to.equal(0); // Should not be in generic
+
+            const creds = config.getOperationalCredentials(1);
+            expect(creds).to.exist;
+            expect(creds!.rootCaKey).to.exist;
+            expect(Bytes.toString(creds!.rootCaKey!.raw)).to.equal("rootcakey");
+            expect(creds!.rootCaCert).to.exist;
+            expect(Bytes.toString(creds!.rootCaCert!.raw)).to.equal("rootcacert");
+            expect(creds!.icaKey).to.exist;
+            expect(Bytes.toString(creds!.icaKey!.raw)).to.equal("icakey");
+            expect(creds!.icaCert).to.exist;
+            expect(Bytes.toString(creds!.icaCert!.raw)).to.equal("icacert");
+        });
+
+        it("should handle multiple credential sets", async () => {
+            const testFile = join(testDir, "opcreds-multi-test.json");
+            await writeFile(
+                testFile,
+                JSON.stringify({
+                    "sdk-config": {
+                        ExampleOpCredsCAKey1: "a2V5MQ==", // "key1"
+                        ExampleCARootCert1: "Y2VydDE=", // "cert1"
+                        ExampleOpCredsCAKey2: "a2V5Mg==", // "key2"
+                        ExampleCARootCert2: "Y2VydDI=", // "cert2"
+                    },
+                }),
+            );
+
+            const config = new ChipConfigData();
+            await config.load(testFile);
+
+            expect(config.operationalCredentials.size).to.equal(2);
+            expect(config.getOperationalCredentialsIndices()).to.deep.equal([1, 2]);
+
+            const creds1 = config.getOperationalCredentials(1);
+            expect(creds1!.rootCaKey!.base64).to.equal("a2V5MQ==");
+
+            const creds2 = config.getOperationalCredentials(2);
+            expect(creds2!.rootCaKey!.base64).to.equal("a2V5Mg==");
+        });
+
+        it("should round-trip operational credentials", async () => {
+            const originalFile = join(testDir, "opcreds-roundtrip-original.json");
+            const savedFile = join(testDir, "opcreds-roundtrip-saved.json");
+
+            await writeFile(
+                originalFile,
+                JSON.stringify({
+                    "sdk-config": {
+                        ExampleOpCredsCAKey1: "cm9vdGNha2V5",
+                        ExampleCARootCert1: "cm9vdGNhY2VydA==",
+                        ExampleOpCredsICAKey1: "aWNha2V5",
+                        ExampleCAIntermediateCert1: "aWNhY2VydA==",
+                    },
+                }),
+            );
+
+            const config = new ChipConfigData();
+            await config.load(originalFile);
+            await config.save(savedFile);
+
+            const savedContent = JSON.parse(await readFile(savedFile, "utf-8"));
+            expect(savedContent["sdk-config"]["ExampleOpCredsCAKey1"]).to.equal("cm9vdGNha2V5");
+            expect(savedContent["sdk-config"]["ExampleCARootCert1"]).to.equal("cm9vdGNhY2VydA==");
+            expect(savedContent["sdk-config"]["ExampleOpCredsICAKey1"]).to.equal("aWNha2V5");
+            expect(savedContent["sdk-config"]["ExampleCAIntermediateCert1"]).to.equal("aWNhY2VydA==");
+        });
+    });
+
+    describe("getCertificateAuthorityConfig", () => {
+        it("should extract CA config from real chip.json", async () => {
+            const chipJsonPath = FIXTURE_CHIP_JSON;
+            const config = new ChipConfigData();
+            await config.load(chipJsonPath);
+
+            const caConfig = await config.getCertificateAuthorityConfig(1);
+            expect(caConfig).to.exist;
+
+            // Verify root CA properties
+            expect(caConfig!.rootCertId).to.be.a("bigint");
+            expect(caConfig!.rootKeyPair).to.exist;
+            expect(caConfig!.rootKeyPair.publicKey).to.be.instanceOf(Uint8Array);
+            expect(caConfig!.rootKeyPair.publicKey.byteLength).to.equal(65); // Uncompressed EC P-256
+            expect(caConfig!.rootKeyPair.privateKey).to.be.instanceOf(Uint8Array);
+            expect(caConfig!.rootKeyPair.privateKey.byteLength).to.equal(32); // EC P-256 private key
+            expect(caConfig!.rootKeyIdentifier).to.be.instanceOf(Uint8Array);
+            expect(caConfig!.rootKeyIdentifier.byteLength).to.equal(20); // SHA-1 hash prefix
+            expect(caConfig!.rootCertBytes).to.be.instanceOf(Uint8Array);
+            expect(caConfig!.nextCertificateId).to.be.a("bigint");
+
+            // Verify ICAC properties (if present)
+            if (caConfig!.icacCertBytes !== undefined) {
+                expect(caConfig!.icacCertId).to.be.a("bigint");
+                expect(caConfig!.icacKeyPair).to.exist;
+                expect(caConfig!.icacKeyPair!.publicKey.byteLength).to.equal(65);
+                expect(caConfig!.icacKeyPair!.privateKey.byteLength).to.equal(32);
+                expect(caConfig!.icacKeyIdentifier).to.be.instanceOf(Uint8Array);
+                expect(caConfig!.icacKeyIdentifier!.byteLength).to.equal(20);
+                expect(caConfig!.icacCertBytes).to.be.instanceOf(Uint8Array);
+            }
+        });
+
+        it("should return undefined for non-existent credentials", async () => {
+            const chipJsonPath = FIXTURE_CHIP_JSON;
+            const config = new ChipConfigData();
+            await config.load(chipJsonPath);
+
+            const caConfig = await config.getCertificateAuthorityConfig(99);
+            expect(caConfig).to.be.undefined;
+        });
+
+        it("should return undefined for incomplete credentials", async () => {
+            const testFile = join(testDir, "incomplete-opcreds.json");
+            await writeFile(
+                testFile,
+                JSON.stringify({
+                    "sdk-config": {
+                        // Only has key, no cert
+                        ExampleOpCredsCAKey1: "cm9vdGNha2V5",
+                    },
+                }),
+            );
+
+            const config = new ChipConfigData();
+            await config.load(testFile);
+
+            const caConfig = await config.getCertificateAuthorityConfig(1);
+            expect(caConfig).to.be.undefined;
         });
     });
 });

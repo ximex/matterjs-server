@@ -1,9 +1,7 @@
-import { Logger } from "@matter/general";
-import { AttributeId, camelize, ClusterId, FabricIndex, Millis, NodeId } from "@matter/main";
+import { AttributeId, camelize, ClusterId, FabricIndex, Logger, Millis, NodeId } from "@matter/main";
 import { AggregatorEndpointDefinition } from "@matter/main/endpoints";
-import { EndpointNumber, QrPairingCodeCodec } from "@matter/main/types";
-import { ControllerCommissioningFlowOptions, DecodedAttributeReportValue } from "@matter/protocol";
-import { getClusterById } from "@matter/types";
+import { ControllerCommissioningFlowOptions, DecodedAttributeReportValue } from "@matter/main/protocol";
+import { EndpointNumber, getClusterById, QrPairingCodeCodec } from "@matter/main/types";
 import { SupportedAttributeClient } from "@project-chip/matter.js/cluster";
 import { Endpoint, NodeStates } from "@project-chip/matter.js/device";
 import { WebSocketServer } from "ws";
@@ -21,6 +19,7 @@ import {
     ServerInfoMessage,
     SuccessResultMessage,
 } from "../types/WebSocketMessageTypes.js";
+import { MATTER_VERSION } from "../util/matterVersion.js";
 import { ConfigStorage } from "./ConfigStorage.js";
 import {
     buildAttributePath,
@@ -258,9 +257,9 @@ export class WebSocketControllerHandler implements WebServerHandler {
         return {
             fabric_id,
             compressed_fabric_id,
-            schema_version: 11, // TODO
-            min_supported_schema_version: 11, // TODO
-            sdk_version: "2024.11.4", // TODO
+            schema_version: 11,
+            min_supported_schema_version: 11,
+            sdk_version: `matter.js/${MATTER_VERSION}`,
             wifi_credentials_set: false,
             thread_credentials_set: false,
             bluetooth_enabled: this.#commandHandler.bleEnabled,
@@ -562,32 +561,30 @@ export class WebSocketControllerHandler implements WebServerHandler {
             throw new Error(`Node ${nodeId} not found`);
         }
 
-        if (!node.initialized) {
-            logger.info(`Waiting for node ${nodeId} to be initialized`);
-            await node.events.initialized;
-            logger.info(`Node ${nodeId} initialized`);
-        }
-
-        const rootEndpoint = node.getRootEndpoint();
-        if (rootEndpoint === undefined) {
-            throw new Error(`Node ${nodeId} has no root endpoint or is not yet initialized`);
-        }
-
-        const attributes: AttributesData = {};
-        await this.#collectAttributesFromEndpointStructure(rootEndpoint, attributes);
-
         let isBridge = false;
-        const aggregatorDeviceTypeId = AggregatorEndpointDefinition.deviceType;
-        for (const key in attributes) {
-            if (key.endsWith("/29/0")) {
-                if (!Array.isArray(attributes[key])) {
-                    continue;
-                }
-                if (attributes[key].some(entry => entry["0"] === aggregatorDeviceTypeId)) {
-                    isBridge = true;
-                    break;
+        const attributes: AttributesData = {};
+        if (node.initialized) {
+            const rootEndpoint = node.getRootEndpoint();
+            if (rootEndpoint === undefined) {
+                throw new Error(`Node ${nodeId} has no root endpoint or is not yet initialized`);
+            }
+
+            await this.#collectAttributesFromEndpointStructure(nodeId, rootEndpoint, attributes);
+
+            const aggregatorDeviceTypeId = AggregatorEndpointDefinition.deviceType;
+            for (const key in attributes) {
+                if (key.endsWith("/29/0")) {
+                    if (!Array.isArray(attributes[key])) {
+                        continue;
+                    }
+                    if (attributes[key].some(entry => entry["0"] === aggregatorDeviceTypeId)) {
+                        isBridge = true;
+                        break;
+                    }
                 }
             }
+        } else {
+            logger.info(`Waiting for node ${nodeId} to be initialized ${NodeStates[node.connectionState]}`);
         }
 
         return {
@@ -602,9 +599,9 @@ export class WebSocketControllerHandler implements WebServerHandler {
         };
     }
 
-    async #collectAttributesFromEndpointStructure(endpoint: Endpoint, attributesData: AttributesData) {
+    async #collectAttributesFromEndpointStructure(nodeId: NodeId, endpoint: Endpoint, attributesData: AttributesData) {
         const endpointId = endpoint.number!;
-        logger.debug(`Collecting attributes for endpoint ${endpointId}`);
+        logger.debug(`Node ${nodeId}: Collecting attributes for endpoint ${endpointId}`);
         for (const cluster of endpoint.getAllClusterClients()) {
             const clusterId = cluster.id;
 
@@ -631,7 +628,7 @@ export class WebSocketControllerHandler implements WebServerHandler {
 
         // Recursively collect over all child endpoints
         for (const childEndpoint of endpoint.getChildEndpoints()) {
-            await this.#collectAttributesFromEndpointStructure(childEndpoint, attributesData);
+            await this.#collectAttributesFromEndpointStructure(nodeId, childEndpoint, attributesData);
         }
     }
 
@@ -643,7 +640,8 @@ export class WebSocketControllerHandler implements WebServerHandler {
         const { endpointId, clusterId, attributeId } = path;
         if (!clusterData) {
             const cluster = getClusterById(clusterId);
-            clusterData = clusterData ?? ClusterMap[cluster.name.toLowerCase()];
+            // TODO
+            clusterData = clusterData ?? ClusterMap[cluster.name.toLowerCase()] ?? { attributes: {} };
         }
 
         return {

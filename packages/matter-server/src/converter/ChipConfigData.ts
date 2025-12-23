@@ -1,6 +1,6 @@
-import type { Bytes } from "@matter/general";
-import { StandardCrypto } from "@matter/main";
-import { Icac, Noc, Rcac } from "@matter/protocol";
+import { LegacyFabricConfigData } from "@matter-server/controller";
+import { Bytes, Key, StandardCrypto, type BinaryKeyPair } from "@matter/main";
+import { CertificateAuthority, Icac, Noc, Rcac } from "@matter/main/protocol";
 import { readFile, writeFile } from "node:fs/promises";
 import {
     TlvFabricIndexList,
@@ -11,7 +11,14 @@ import {
     TlvSessionResumptionEntry,
     TlvSessionResumptionIndex,
 } from "./TlvSchemas.js";
-import type { ChipConfigFile, DecodedEntry, FabricData, GlobalData, SessionData } from "./types.js";
+import type {
+    ChipConfigFile,
+    DecodedEntry,
+    FabricData,
+    GlobalData,
+    OperationalCredentials,
+    SessionData,
+} from "./types.js";
 
 /** Result of certificate chain verification */
 export interface CertificateVerificationResult {
@@ -22,55 +29,7 @@ export interface CertificateVerificationResult {
     error?: string;
 }
 
-/**
- * Fabric configuration data extracted from chip.json.
- * This is a partial representation of Fabric.SyncConfig from @matter/protocol.
- *
- * IMPORTANT: The controller's operational keypair is NOT available in chip.json.
- *
- * The Python CHIP SDK intentionally does not persist the operational private key to chip.json.
- * When pychip_OpCreds_AllocateController is called without a keypair parameter, it generates
- * an ephemeral P256 keypair, creates a NOC for it, but only stores the keypair in memory
- * (see FabricTable.cpp:190 - "Operational Key is never saved to storage here").
- *
- * This means when migrating from Python Matter Server to matter.js:
- * - The RCAC and ICAC can be reused (they define the fabric's CA chain)
- * - The NOC must be REPLACED with a new one signed for a new keypair
- * - A new operational keypair must be generated for the matter.js controller
- * - The IPK and other fabric data can be preserved
- *
- * The ExampleOpCredsCAKey1/ICAKey1 in chip.json are the CA/ICA signing keys (for issuing
- * certificates to devices), NOT the controller's operational identity key.
- *
- * Fields that need to be computed or provided when creating the Fabric:
- * - keyPair: Must generate a new keypair and issue a new NOC
- * - globalId: Computed from fabricId + rootPublicKey
- * - operationalIdentityProtectionKey: Computed from identityProtectionKey + globalId
- */
-export interface FabricConfigData {
-    /** Fabric index (1, 2, etc.) */
-    fabricIndex: number;
-    /** Fabric ID from NOC certificate (can be number for small values, bigint for large) */
-    fabricId: number | bigint;
-    /** Node ID from NOC certificate (can be number for small values, bigint for large) */
-    nodeId: number | bigint;
-    /** Root node ID from RCAC certificate (can be number for small values, bigint for large) */
-    rootNodeId: number | bigint;
-    /** Root vendor ID from fabric metadata */
-    rootVendorId: number;
-    /** Root CA certificate (RCAC) as TLV bytes */
-    rootCert: Bytes;
-    /** Root CA public key extracted from RCAC */
-    rootPublicKey: Bytes;
-    /** Identity Protection Key from group key set 0 */
-    identityProtectionKey: Bytes;
-    /** Intermediate CA certificate (ICAC) as TLV bytes, if present */
-    intermediateCACert?: Bytes;
-    /** Node Operational Certificate (NOC) as TLV bytes */
-    operationalCert: Bytes;
-    /** Fabric label */
-    label: string;
-}
+const CHIP_DEFAULT_IPK = Bytes.fromHex("74656d706f726172792069706b203031"); // "temporary ipk 01"
 
 /**
  * Manages chip.json configuration data with categorized access to fabrics,
@@ -94,6 +53,9 @@ export class ChipConfigData {
 
     /** Generic/unknown keys - stored as original base64 */
     readonly generic = new Map<string, string>();
+
+    /** Operational credentials (CA/ICA certs and keys) indexed by credential set number */
+    readonly operationalCredentials = new Map<number, OperationalCredentials>();
 
     /** The repl-config section preserved as-is */
     replConfig: Record<string, unknown> = {};
@@ -123,6 +85,44 @@ export class ChipConfigData {
      */
     private static isIgnoredKey(key: string): boolean {
         return this.IGNORED_KEY_PATTERNS.some(pattern => pattern.test(key));
+    }
+
+    /** Patterns for operational credentials keys */
+    private static readonly OP_CREDS_PATTERNS = {
+        rootCaKey: /^ExampleOpCredsCAKey(\d+)$/,
+        rootCaCert: /^ExampleCARootCert(\d+)$/,
+        icaKey: /^ExampleOpCredsICAKey(\d+)$/,
+        icaCert: /^ExampleCAIntermediateCert(\d+)$/,
+    };
+
+    /**
+     * Get or create an OperationalCredentials entry for the given index.
+     */
+    private getOrCreateOpCreds(index: number): OperationalCredentials {
+        let creds = this.operationalCredentials.get(index);
+        if (!creds) {
+            creds = {};
+            this.operationalCredentials.set(index, creds);
+        }
+        return creds;
+    }
+
+    /**
+     * Check if a key is an operational credentials key and parse it if so.
+     * Returns true if the key was handled.
+     */
+    private parseOperationalCredentialsKey(key: string, value: string): boolean {
+        for (const [field, pattern] of Object.entries(ChipConfigData.OP_CREDS_PATTERNS)) {
+            const match = key.match(pattern);
+            if (match) {
+                const index = parseInt(match[1], 10);
+                const creds = this.getOrCreateOpCreds(index);
+                const entry = ChipConfigData.decodeEntry(value);
+                creds[field as keyof OperationalCredentials] = entry;
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -258,6 +258,7 @@ export class ChipConfigData {
         this.globals.lastKnownGoodTimeDecoded = undefined;
         this.ignored.clear();
         this.generic.clear();
+        this.operationalCredentials.clear();
 
         // Store repl-config as-is
         this.replConfig = data["repl-config"] ?? {};
@@ -271,6 +272,8 @@ export class ChipConfigData {
                 this.parseFabricKey(key, value);
             } else if (key.startsWith("g/")) {
                 this.parseGlobalKey(key, value);
+            } else if (this.parseOperationalCredentialsKey(key, value)) {
+                // Handled by parseOperationalCredentialsKey
             } else {
                 // Generic/unknown key - store as-is
                 this.generic.set(key, value);
@@ -337,6 +340,22 @@ export class ChipConfigData {
             sdkConfig[key] = value;
         }
 
+        // Add operational credentials
+        for (const [index, creds] of this.operationalCredentials) {
+            if (creds.rootCaKey) {
+                sdkConfig[`ExampleOpCredsCAKey${index}`] = creds.rootCaKey.base64;
+            }
+            if (creds.rootCaCert) {
+                sdkConfig[`ExampleCARootCert${index}`] = creds.rootCaCert.base64;
+            }
+            if (creds.icaKey) {
+                sdkConfig[`ExampleOpCredsICAKey${index}`] = creds.icaKey.base64;
+            }
+            if (creds.icaCert) {
+                sdkConfig[`ExampleCAIntermediateCert${index}`] = creds.icaCert.base64;
+            }
+        }
+
         // Add generic keys
         for (const [key, value] of this.generic) {
             sdkConfig[key] = value;
@@ -365,6 +384,142 @@ export class ChipConfigData {
      */
     getFabric(index: number): FabricData | undefined {
         return this.fabrics.get(index);
+    }
+
+    /**
+     * Get operational credentials by index.
+     */
+    getOperationalCredentials(index: number): OperationalCredentials | undefined {
+        return this.operationalCredentials.get(index);
+    }
+
+    /**
+     * Get a list of all operational credentials indices.
+     */
+    getOperationalCredentialsIndices(): number[] {
+        return Array.from(this.operationalCredentials.keys()).sort((a, b) => a - b);
+    }
+
+    /**
+     * Convert OperationalCredentials to CertificateAuthority.Configuration.
+     *
+     * This parses the DER-encoded private keys and Matter TLV certificates to produce
+     * a configuration that can be used to create a CertificateAuthority instance.
+     *
+     * The private keys in chip.json are stored in SEC1 DER format.
+     * The certificates are stored in Matter TLV format.
+     *
+     * @param index The operational credentials index (typically 1)
+     * @param nextCertificateId Optional starting certificate ID (defaults to 2)
+     * @returns CertificateAuthority.Configuration or undefined if credentials are incomplete
+     */
+    async getCertificateAuthorityConfig(
+        index: number,
+        nextCertificateId?: bigint,
+    ): Promise<CertificateAuthority.Configuration | undefined> {
+        const creds = this.operationalCredentials.get(index);
+        if (!creds) return undefined;
+
+        // Need at least root CA key and cert
+        if (!creds.rootCaKey || !creds.rootCaCert) return undefined;
+
+        try {
+            // Parse root CA certificate - detect format by first byte
+            // 0x30 = ASN.1/DER sequence tag, 0x15 = Matter TLV structure tag
+            const certBytes = Bytes.of(creds.rootCaCert.raw);
+            const rcac = certBytes[0] === 0x30 ? Rcac.fromAsn1(certBytes) : Rcac.fromTlv(certBytes);
+            const rootCertId = rcac.cert.subject.rcacId;
+            if (rootCertId === undefined) return undefined;
+
+            // Parse root CA private key
+            // The key can be in different formats:
+            // - SEC1 DER encoded (starts with 0x30)
+            // - Raw format: uncompressed public key (65 bytes starting with 0x04) + private key (32 bytes) = 97 bytes
+            const keyBytes = Bytes.of(creds.rootCaKey.raw);
+            let rootKeyPair: BinaryKeyPair;
+
+            if (keyBytes[0] === 0x30) {
+                // SEC1 DER format
+                const rootKey = Key({ sec1: keyBytes });
+                rootKeyPair = {
+                    publicKey: Bytes.of(rootKey.publicBits!),
+                    privateKey: Bytes.of(rootKey.privateBits!),
+                };
+            } else if (keyBytes.length === 97 && keyBytes[0] === 0x04) {
+                // Raw format: 65-byte uncompressed public key + 32-byte private key
+                rootKeyPair = {
+                    publicKey: keyBytes.slice(0, 65),
+                    privateKey: keyBytes.slice(65),
+                };
+            } else {
+                // Unknown format
+                return undefined;
+            }
+
+            // Compute root key identifier (first 20 bytes of public key hash)
+            const rootKeyIdentifier = rcac.cert.extensions.subjectKeyIdentifier;
+
+            // Get the certificate bytes in TLV format for storage
+            const rootCertTlvBytes = Bytes.of(rcac.asSignedTlv());
+
+            // Build base configuration
+            const config: CertificateAuthority.Configuration = {
+                rootCertId: BigInt(rootCertId),
+                rootKeyPair,
+                rootKeyIdentifier,
+                rootCertBytes: rootCertTlvBytes,
+                nextCertificateId: nextCertificateId ?? BigInt(rootCertId) + BigInt(1),
+            };
+
+            // If we have ICAC credentials, add them
+            if (creds.icaKey && creds.icaCert) {
+                // Parse ICAC certificate - detect format by first byte
+                const icacCertBytes = Bytes.of(creds.icaCert.raw);
+                const icac = icacCertBytes[0] === 0x30 ? Icac.fromAsn1(icacCertBytes) : Icac.fromTlv(icacCertBytes);
+                const icacCertId = icac.cert.subject.icacId;
+                if (icacCertId === undefined) return undefined;
+
+                // Parse ICAC private key
+                const icaKeyBytes = Bytes.of(creds.icaKey.raw);
+                let icacKeyPair: BinaryKeyPair;
+
+                if (icaKeyBytes[0] === 0x30) {
+                    // SEC1 DER format
+                    const icaKey = Key({ sec1: icaKeyBytes });
+                    icacKeyPair = {
+                        publicKey: Bytes.of(icaKey.publicBits!),
+                        privateKey: Bytes.of(icaKey.privateBits!),
+                    };
+                } else if (icaKeyBytes.length === 97 && icaKeyBytes[0] === 0x04) {
+                    // Raw format
+                    icacKeyPair = {
+                        publicKey: icaKeyBytes.slice(0, 65),
+                        privateKey: icaKeyBytes.slice(65),
+                    };
+                } else {
+                    return undefined;
+                }
+
+                // Compute ICAC key identifier
+                const icacKeyIdentifier = icac.cert.extensions.subjectKeyIdentifier;
+
+                // Get the ICAC certificate bytes in TLV format
+                const icacCertTlvBytes = Bytes.of(icac.asSignedTlv());
+
+                config.icacCertId = BigInt(icacCertId);
+                config.icacKeyPair = icacKeyPair;
+                config.icacKeyIdentifier = icacKeyIdentifier;
+                config.icacCertBytes = icacCertTlvBytes;
+
+                if (icacCertId >= config.nextCertificateId) {
+                    config.nextCertificateId = BigInt(icacCertId) + BigInt(1);
+                }
+            }
+
+            return config;
+        } catch {
+            return undefined;
+        }
     }
 
     /**
@@ -482,7 +637,7 @@ export class ChipConfigData {
      * @param fabricIndex The fabric index to extract
      * @returns FabricConfigData or undefined if fabric doesn't exist or data is incomplete
      */
-    getFabricConfig(fabricIndex: number): FabricConfigData | undefined {
+    getFabricConfig(fabricIndex: number): LegacyFabricConfigData | undefined {
         const fabric = this.fabrics.get(fabricIndex);
         if (!fabric) return undefined;
 
@@ -509,7 +664,8 @@ export class ChipConfigData {
         const ipkKeySet = fabric.keysDecoded.get(0);
         if (!ipkKeySet || ipkKeySet.keys.length === 0) return undefined;
 
-        // The first key entry contains the actual IPK
+        // Verify there's a 16-byte IPK key entry (the operational IPK is a derived value,
+        // but the plain IPK we return is always the same constant)
         const ipkEntry = ipkKeySet.keys.find(k => k.key.byteLength === 16);
         if (!ipkEntry) return undefined;
 
@@ -521,7 +677,7 @@ export class ChipConfigData {
             rootVendorId: vendorId,
             rootCert: fabric.rcac.raw,
             rootPublicKey: rcac.cert.ellipticCurvePublicKey,
-            identityProtectionKey: ipkEntry.key,
+            identityProtectionKey: CHIP_DEFAULT_IPK,
             intermediateCACert: fabric.icac?.raw,
             operationalCert: fabric.noc.raw,
             label,

@@ -1,7 +1,6 @@
-import { Bytes, Logger } from "@matter/general";
-import { AttributeId, camelize, ClusterId, isObject } from "@matter/main";
+import { AttributeId, Bytes, camelize, ClusterId, isObject, Logger } from "@matter/main";
+import { ClusterModel, FieldValue, ValueModel } from "@matter/main/model";
 import { EndpointNumber, MATTER_EPOCH_OFFSET_S, MATTER_EPOCH_OFFSET_US } from "@matter/main/types";
-import { ClusterModel, FieldValue, ValueModel } from "@matter/model";
 
 const logger = new Logger("ChipToolWebSocketHandler");
 

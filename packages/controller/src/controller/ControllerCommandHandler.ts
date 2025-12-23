@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Logger } from "@matter/general";
 import {
     FabricId,
     FabricIndex,
+    Logger,
     Millis,
     NodeId,
     Observable,
@@ -16,16 +16,17 @@ import {
     ServerAddressUdp,
 } from "@matter/main";
 import { GeneralCommissioning, GeneralDiagnosticsCluster, OperationalCredentials } from "@matter/main/clusters";
-import { ManualPairingCodeCodec, QrPairingCodeCodec, VendorId } from "@matter/main/types";
 import {
     DecodedAttributeReportValue,
     DecodedEventReportValue,
     SignatureFromCommandSpec,
     SupportedTransportsSchema,
-} from "@matter/protocol";
+} from "@matter/main/protocol";
 import {
     Attribute,
     Command,
+    ManualPairingCodeCodec,
+    QrPairingCodeCodec,
     StatusResponseError,
     TlvAny,
     TlvBoolean,
@@ -37,7 +38,8 @@ import {
     TlvString,
     TlvUInt64,
     TlvVoid,
-} from "@matter/types";
+    VendorId,
+} from "@matter/main/types";
 import { CommissioningController, NodeCommissioningOptions } from "@project-chip/matter.js";
 import { NodeStates, PairedNode } from "@project-chip/matter.js/device";
 import { inspect } from "node:util";

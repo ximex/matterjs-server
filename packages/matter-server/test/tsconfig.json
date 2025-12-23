@@ -1,9 +1,18 @@
 {
     "extends": "../../tools/tsc/tsconfig.test.json",
     "compilerOptions": {
-        "types": ["mocha", "node"]
+        "types": [
+            "mocha",
+            "node"
+        ]
     },
     "references": [
+        {
+            "path": "../../controller/src"
+        },
+        {
+            "path": "../../dashboard/src"
+        },
         {
             "path": "../../tools/src"
         },

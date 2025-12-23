@@ -65,4 +65,5 @@ MatterModel.standard.clusters.forEach(cluster => {
         }
     });
     ClusterMap[cluster.name.toLowerCase()] = clusterData;
+    ClusterMap[cluster.id] = clusterData;
 });

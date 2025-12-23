@@ -1,7 +1,20 @@
-import { Environment, NodeId } from "@matter/main";
+import { Bytes, Crypto, Environment, FabricId, GlobalFabricId } from "@matter/main";
+import { VendorId } from "@matter/main/types";
 import { CommissioningController } from "@project-chip/matter.js";
 import { ConfigStorage } from "../server/ConfigStorage.js";
 import { ControllerCommandHandler } from "./ControllerCommandHandler.js";
+import { LegacyDataInjector, LegacyServerData } from "./LegacyDataInjector.js";
+
+export async function computeCompressedNodeId(
+    crypto: Crypto,
+    fabricId: number | bigint,
+    caKey: Bytes,
+): Promise<string> {
+    return (await GlobalFabricId.compute(crypto, FabricId(fabricId), caKey)).toString();
+}
+
+// Storage ID used for the Matter server
+const MATTER_SERVER_ID = "server";
 
 export class MatterController {
     #env: Environment;
@@ -9,9 +22,24 @@ export class MatterController {
     #commandHandler?: ControllerCommandHandler;
     #config: ConfigStorage;
 
-    static async create(environment: Environment, config: ConfigStorage) {
+    static async create(environment: Environment, config: ConfigStorage, legacyData?: LegacyServerData) {
         const instance = new MatterController(environment, config);
-        await instance.initialize();
+
+        if (legacyData !== undefined) {
+            const crypto = environment.get(Crypto);
+            const baseStorage = await config.service.open(MATTER_SERVER_ID);
+            if (legacyData.credentials && legacyData.fabricId) {
+                await LegacyDataInjector.injectCredentials(
+                    baseStorage.createContext("credentials"),
+                    crypto,
+                    legacyData.credentials,
+                    legacyData.fabric,
+                );
+            }
+            await LegacyDataInjector.injectNodeData(baseStorage, legacyData.nodeData);
+        }
+
+        await instance.initialize(legacyData?.vendorId, legacyData?.fabricId);
         return instance;
     }
 
@@ -20,15 +48,17 @@ export class MatterController {
         this.#config = config;
     }
 
-    protected async initialize() {
+    protected async initialize(vendorId?: number, fabricId?: number | bigint) {
         this.#controllerInstance = new CommissioningController({
             environment: {
                 environment: this.#env,
-                id: "ha-server",
+                id: MATTER_SERVER_ID,
             },
-            autoConnect: false, // Do not auto connect to the commissioned nodes
+            autoConnect: false, // Do not auto-connect to the commissioned nodes
             adminFabricLabel: this.#config.fabricLabel,
-            rootNodeId: NodeId(1),
+            adminVendorId: vendorId !== undefined ? VendorId(vendorId) : undefined,
+            adminFabricId: fabricId !== undefined ? FabricId(fabricId) : undefined,
+            enableOtaProvider: true,
         });
     }
 

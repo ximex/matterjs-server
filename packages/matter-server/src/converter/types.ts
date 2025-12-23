@@ -87,6 +87,29 @@ export interface GlobalData {
 }
 
 /**
+ * Operational credentials data from ExampleOpCreds* keys.
+ * These are the CA/ICA certificates and private keys used for signing NOCs.
+ *
+ * Keys in chip.json:
+ * - ExampleOpCredsCAKey<N>: Root CA private key (DER format)
+ * - ExampleCARootCert<N>: Root CA certificate (Matter TLV format)
+ * - ExampleOpCredsICAKey<N>: Intermediate CA private key (DER format)
+ * - ExampleICACert<N>: Intermediate CA certificate (Matter TLV format)
+ *
+ * Where N is an index (1, 2, etc.) corresponding to a credential set.
+ */
+export interface OperationalCredentials {
+    /** Root CA private key (ExampleOpCredsCAKey<N>) - DER encoded */
+    rootCaKey?: DecodedEntry;
+    /** Root CA certificate (ExampleCARootCert<N>) - Matter TLV format */
+    rootCaCert?: DecodedEntry;
+    /** Intermediate CA private key (ExampleOpCredsICAKey<N>) - DER encoded */
+    icaKey?: DecodedEntry;
+    /** Intermediate CA certificate (ExampleICACert<N>) - Matter TLV format */
+    icaCert?: DecodedEntry;
+}
+
+/**
  * Raw chip.json file structure.
  */
 export interface ChipConfigFile {
