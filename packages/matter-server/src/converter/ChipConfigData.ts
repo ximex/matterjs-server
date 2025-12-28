@@ -673,7 +673,7 @@ export class ChipConfigData {
             fabricIndex,
             fabricId,
             nodeId,
-            rootNodeId: rcacId,
+            rootNodeId: nodeId,
             rootVendorId: vendorId,
             rootCert: fabric.rcac.raw,
             rootPublicKey: rcac.cert.ellipticCurvePublicKey,

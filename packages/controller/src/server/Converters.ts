@@ -14,16 +14,126 @@ export function parseNumber(number: string): number | bigint {
 }
 
 /**
- * Uses the matter.js Model to convert the response data for read, subscribe and invoke into a tag based response
- * including conversion of data types.
+ * Converts tag-based WebSocket data (with numeric keys) back to Matter.js data format (with camelCased names).
+ * This is the reverse of convertMatterToWebSocketTagBased.
  */
-export function convertMatterToWebSocketTagBased(
+export function convertWebSocketTagBasedToMatter(
     value: unknown,
     model: ValueModel | undefined,
     clusterModel: ClusterModel,
 ): unknown {
     if (model === undefined || value === null) {
+        return value; // Return null/undefined values as-is
+    }
+
+    // Handle lists
+    if (Array.isArray(value) && model.type === "list") {
+        return value.map(v => convertWebSocketTagBasedToMatter(v, model.members[0], clusterModel));
+    }
+
+    // Handle structs - convert numeric keys to camelCased member names
+    if (isObject(value) && model.metabase?.name === "struct") {
+        const valueKeys = Object.keys(value);
+        const result: { [key: string]: unknown } = {};
+
+        // Build a map of member ID to member for efficient lookup
+        const memberById: { [id: number]: ValueModel } = {};
+        for (const member of model.members) {
+            if (member.id !== undefined) {
+                memberById[member.id] = member;
+            }
+        }
+
+        for (const key of valueKeys) {
+            const memberId = parseInt(key);
+            if (!isNaN(memberId) && memberById[memberId]) {
+                const member = memberById[memberId];
+                result[camelize(member.name)] = convertWebSocketTagBasedToMatter(value[key], member, clusterModel);
+            } else {
+                // Keep unknown keys as-is (fallback for unknown attributes)
+                result[key] = value[key];
+            }
+        }
+        return result;
+    }
+
+    // Handle bitmaps - convert number to object with boolean flags
+    if (typeof value === "number" && model.metabase?.metatype === "bitmap") {
+        const bitmapValue: { [key: string]: boolean | number } = {};
+
+        for (const member of clusterModel.scope.membersOf(model)) {
+            const memberName =
+                member.name !== undefined
+                    ? camelize(member.name)
+                    : member.description !== undefined
+                      ? camelize(member.description)
+                      : undefined;
+
+            if (memberName === undefined) {
+                continue;
+            }
+
+            const constraintValue = FieldValue.numericValue(member.constraint.value);
+            if (constraintValue !== undefined) {
+                // Single bit - extract as boolean
+                bitmapValue[memberName] = (value & (1 << constraintValue)) !== 0;
+            } else {
+                const minBit = FieldValue.numericValue(member.constraint.min) ?? 0;
+                const maxBit = FieldValue.numericValue(member.constraint.max);
+                if (maxBit !== undefined) {
+                    // Multi-bit field - extract value
+                    const mask = ((1 << (maxBit - minBit + 1)) - 1) << minBit;
+                    bitmapValue[memberName] = (value & mask) >> minBit;
+                } else {
+                    // Single bit at minBit position
+                    bitmapValue[memberName] = (value & (1 << minBit)) !== 0;
+                }
+            }
+        }
+
+        return bitmapValue;
+    }
+
+    // Handle bytes - convert base64 string to Uint8Array
+    if (typeof value === "string" && model.metabase?.metatype === "bytes") {
+        return Bytes.fromBase64(value);
+    }
+
+    // Handle epoch timestamps - convert from Unix timestamps to Matter epoch
+    if (model.metabase?.metatype === "integer") {
+        if (model.type === "epoch-s" && typeof value === "number") {
+            return value + MATTER_EPOCH_OFFSET_S;
+        } else if (model.type === "epoch-us" && (typeof value === "number" || typeof value === "bigint")) {
+            return BigInt(value) + MATTER_EPOCH_OFFSET_US;
+        }
+    }
+
+    // Return primitives as-is
+    return value;
+}
+
+/**
+ * Uses the matter.js Model to convert the response data for read, subscribe and invoke into a tag-based response
+ * including conversion of data types.
+ */
+export function convertMatterToWebSocketTagBased(
+    value: unknown,
+    model: ValueModel | undefined,
+    clusterModel: ClusterModel | undefined,
+): unknown {
+    if (value === null) {
         return null;
+    }
+    if (model === undefined) {
+        // Do some simple conversions when we have unknown attributes
+        if (Bytes.isBytes(value)) {
+            return `${Bytes.toBase64(value)}`;
+        }
+        if (isObject(value) || !["string", "number", "bigint", "boolean", "undefined"].includes(typeof value)) {
+            return null; // We cannot convert this
+        }
+
+        return value;
     }
     if (Array.isArray(value) && model.type === "list") {
         return value.map(v => convertMatterToWebSocketTagBased(v, model.members[0], clusterModel));
@@ -40,33 +150,35 @@ export function convertMatterToWebSocketTagBased(
         return result;
     }
     if (isObject(value) && model.metabase?.metatype === "bitmap") {
-        let numberValue = 0;
+        if (clusterModel !== undefined) {
+            let numberValue = 0;
 
-        for (const member of clusterModel.scope.membersOf(model)) {
-            const memberValue =
-                member.name !== undefined && value[camelize(member.name)]
-                    ? value[camelize(member.name)]
-                    : member.description !== undefined && value[camelize(member.description)]
-                      ? value[camelize(member.description)]
-                      : undefined;
+            for (const member of clusterModel.scope.membersOf(model)) {
+                const memberValue =
+                    member.name !== undefined && value[camelize(member.name)]
+                        ? value[camelize(member.name)]
+                        : member.description !== undefined && value[camelize(member.description)]
+                          ? value[camelize(member.description)]
+                          : undefined;
 
-            if (!memberValue) {
-                continue;
-            }
-            if (typeof memberValue !== "boolean" && typeof memberValue !== "number") {
-                throw new Error("Invalid bitmap value", memberValue);
+                if (!memberValue) {
+                    continue;
+                }
+                if (typeof memberValue !== "boolean" && typeof memberValue !== "number") {
+                    throw new Error("Invalid bitmap value", memberValue);
+                }
+
+                const constraintValue = FieldValue.numericValue(member.constraint.value);
+                if (constraintValue !== undefined) {
+                    numberValue |= 1 << constraintValue;
+                } else {
+                    const minBit = FieldValue.numericValue(member.constraint.min) ?? 0;
+                    numberValue |= typeof memberValue === "boolean" ? 1 : memberValue << minBit;
+                }
             }
 
-            const constraintValue = FieldValue.numericValue(member.constraint.value);
-            if (constraintValue !== undefined) {
-                numberValue |= 1 << constraintValue;
-            } else {
-                const minBit = FieldValue.numericValue(member.constraint.min) ?? 0;
-                numberValue |= typeof memberValue === "boolean" ? 1 : memberValue << minBit;
-            }
+            return numberValue;
         }
-
-        return numberValue;
     }
 
     if (value instanceof Uint8Array && model.metabase?.metatype === "bytes") {

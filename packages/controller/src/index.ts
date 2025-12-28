@@ -7,8 +7,12 @@ export * from "./controller/ControllerCommandHandler.js";
 export * from "./controller/LegacyDataInjector.js";
 export * from "./controller/MatterController.js";
 
+// Export model
+export * from "./model/ModelMapper.js";
+
 // Export server handlers and types
 export * from "./server/ConfigStorage.js";
+export * from "./server/Converters.js";
 export * from "./server/WebSocketControllerHandler.js";
 export * from "./types/WebServer.js";
 

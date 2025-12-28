@@ -12,7 +12,7 @@ import {
     MatterModel,
 } from "@matter/model";
 
-type AttributeDetails = { [key: string]: AttributeModel };
+type AttributeDetails = { [key: string]: AttributeModel | undefined };
 
 /** Metadata for Global attributes */
 export const GlobalAttributes: AttributeDetails = {
@@ -30,12 +30,12 @@ export const GlobalAttributes: AttributeDetails = {
 export type ClusterMapEntry = {
     clusterId: ClusterId;
     model: ClusterModel;
-    commands: { [key: string]: CommandModel };
+    commands: { [key: string]: CommandModel | undefined };
     attributes: AttributeDetails;
-    events: { [key: string]: EventModel };
+    events: { [key: string]: EventModel | undefined };
 };
 export const ClusterMap: {
-    [key: string]: ClusterMapEntry;
+    [key: string]: ClusterMapEntry | undefined;
 } = {};
 
 // Remap the clusters from Model to a more optimized form for direct access

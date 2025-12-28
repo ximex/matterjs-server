@@ -40,7 +40,7 @@ async function updatePackageJson(filePath, version) {
 
         for (const [name, currentVersion] of Object.entries(deps)) {
             if (isMatterPackage(name)) {
-                const newVersion = `^${version}`;
+                const newVersion = `${version}`;
                 if (currentVersion !== newVersion) {
                     deps[name] = newVersion;
                     modified = true;

@@ -1,4 +1,4 @@
-import { ImplementationError, SupportedStorageTypes } from "@matter/general";
+import { ImplementationError, MaybePromise, SupportedStorageTypes } from "@matter/general";
 import {
     Bytes,
     Crypto,
@@ -12,6 +12,8 @@ import {
 } from "@matter/main";
 import { CertificateAuthority, Fabric, FabricBuilder, Noc } from "@matter/main/protocol";
 import { VendorId } from "@matter/main/types";
+import { ClusterMap } from "../model/ModelMapper.js";
+import { convertWebSocketTagBasedToMatter } from "../server/Converters.js";
 
 const logger = Logger.get("LegacyDataInjector");
 
@@ -107,6 +109,15 @@ export interface LegacyServerData {
 }
 
 export namespace LegacyDataInjector {
+    function isPrimitiveType(value: unknown) {
+        return (
+            typeof value === "number" ||
+            value === null ||
+            typeof value == "boolean" ||
+            (typeof value == "string" && !BASE64_REGEX.test(value))
+        );
+    }
+
     export async function injectCredentials(
         credentialsStorage: StorageContext,
         crypto: Crypto,
@@ -122,7 +133,7 @@ export namespace LegacyDataInjector {
                 }
                 logger.warn(`Overriding credential ${key} with new value!`);
             }
-            credentialsStorage.set(key, value);
+            await credentialsStorage.set(key, value);
         }
 
         if (fabricData === undefined) {
@@ -183,7 +194,7 @@ export namespace LegacyDataInjector {
         );
         const rootFabric = await builder.build(tempFabric.fabricIndex);
 
-        credentialsStorage.set("fabric", rootFabric.config);
+        await credentialsStorage.set("fabric", rootFabric.config);
     }
 
     export async function injectNodeData(baseStorage: StorageManager, nodeData?: LegacyServerFile) {
@@ -203,6 +214,7 @@ export namespace LegacyDataInjector {
             commissionedNodes.push([BigInt(nodeDetails.node_id), {}]);
             let newNode = true;
             logger.info(`Injecting node ${nodeId} into storage`);
+            const nodeWrites = new Array<MaybePromise<void>>();
             for (const [attributeKey, value] of Object.entries(nodeDetails.attributes)) {
                 let currentEndpointId: string | undefined;
                 let currentClusterId: string | undefined;
@@ -224,33 +236,32 @@ export namespace LegacyDataInjector {
                         }
                         newNode = false;
                     }
-                    clusterStorage.set("__version__", 1);
+                    nodeWrites.push(clusterStorage.set("__version__", 1));
                 }
 
-                const isPrimitiveType = (value: unknown) =>
-                    typeof value === "number" ||
-                    value === null ||
-                    typeof value == "boolean" ||
-                    (typeof value == "string" && !BASE64_REGEX.test(value));
-
-                if (isPrimitiveType(value) || (Array.isArray(value) && value.every(isPrimitiveType))) {
-                    clusterStorage!.set(attributeId, value as SupportedStorageTypes);
-                } else {
-                    if (clusterId === "29" && attributeId === "0" && Array.isArray(value)) {
-                        // Descriptor Devicetype
-                        clusterStorage!.set(
-                            attributeId,
-                            value.map(dt => ({ deviceType: dt["0"], revision: dt["1"] })),
+                const clusterModel = ClusterMap[clusterId];
+                const model = clusterModel?.attributes?.[attributeId];
+                if (clusterModel === undefined || model === undefined) {
+                    if (isPrimitiveType(value) || (Array.isArray(value) && value.every(isPrimitiveType))) {
+                        nodeWrites.push(clusterStorage!.set(attributeId, value as SupportedStorageTypes));
+                    } else {
+                        logger.info(
+                            `Attribute ${attributeKey} not found in and unclear value. Skipping injection.`,
+                            value,
                         );
-                    } else if (clusterId === "40" && attributeId === "19" && typeof value === "object" && value) {
-                        // Capability Minimas
-                        clusterStorage!.set(attributeId, {
-                            caseSessionsPerFabric: (value as any)["0"],
-                            subscriptionsPerFabric: (value as any)["1"],
-                        });
+                    }
+                } else {
+                    const convertedValue = convertWebSocketTagBasedToMatter(value, model, clusterModel.model);
+                    if (convertedValue !== undefined) {
+                        logger.debug(`Converted value for attribute ${attributeKey}:`, value, "->", convertedValue);
+                        nodeWrites.push(clusterStorage!.set(attributeId, convertedValue as SupportedStorageTypes));
+                    } else {
+                        logger.info(`Attribute ${attributeKey} could not be converted. Skipping injection.`);
                     }
                 }
             }
+            await Promise.allSettled(nodeWrites);
+            nodeWrites.length = 0;
         }
         await nodesListStorage.set("commissionedNodes", commissionedNodes);
     }

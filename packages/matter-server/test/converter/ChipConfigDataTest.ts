@@ -871,19 +871,19 @@ describe("ChipConfigData", () => {
             expect(fabricConfig!.nodeId).to.equal(noc!.cert.subject.nodeId);
         });
 
-        it("should have correct rootNodeId from RCAC", async () => {
+        it("should have correct rootNodeId from NOC", async () => {
             const chipJsonPath = FIXTURE_CHIP_JSON;
             const config = new ChipConfigData();
             await config.load(chipJsonPath);
 
             const fabricConfig = config.getFabricConfig(1);
-            const rcac = config.getRcac(1);
+            const noc = config.getNoc(1);
 
             expect(fabricConfig).to.exist;
-            expect(rcac).to.exist;
+            expect(noc).to.exist;
 
             // rootNodeId should be the rcacId from RCAC subject
-            expect(fabricConfig!.rootNodeId).to.equal(rcac!.cert.subject.rcacId);
+            expect(fabricConfig!.rootNodeId).to.equal(noc!.cert.subject.nodeId);
         });
 
         it("should extract IPK from group key set 0", async () => {
