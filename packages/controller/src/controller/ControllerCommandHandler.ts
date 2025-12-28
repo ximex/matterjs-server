@@ -533,8 +533,16 @@ export class ControllerCommandHandler {
             passcode = pairingCodeCodec[0].passcode;
         } else if ("passcode" in data) {
             passcode = data.passcode;
-            vendorId = VendorId(data.vendorId);
-            productId = data.productId;
+            // Check for discriminator-based discovery
+            if ("shortDiscriminator" in data) {
+                shortDiscriminator = data.shortDiscriminator;
+            } else if ("longDiscriminator" in data) {
+                longDiscriminator = data.longDiscriminator;
+            } else if ("vendorId" in data && "productId" in data) {
+                vendorId = VendorId(data.vendorId);
+                productId = data.productId;
+            }
+            // If none of the above, will discover any commissionable device
         } else {
             throw new Error("No pairing code provided");
         }

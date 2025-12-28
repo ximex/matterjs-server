@@ -6,9 +6,9 @@ This document compares the WebSocket API functionality between the original Pyth
 
 | Category | Python Server | Matter.js Server | Coverage |
 |----------|--------------|------------------|----------|
-| Commands | 26 | 24 implemented | ~92% |
+| Commands | 26 | 25 implemented | ~96% |
 | Events | 9 | 6 | ~67% |
-| Full functionality | - | - | ~82% |
+| Full functionality | - | - | ~85% |
 
 ---
 
@@ -41,8 +41,8 @@ This document compares the WebSocket API functionality between the original Pyth
 |---------|--------|-----------|-------|
 | `start_listening` | ✅ | ✅ | Enable events + get all nodes |
 | `get_nodes` | ✅ | ✅ | Get all commissioned nodes |
-| `get_node` | ✅ | ❌ | Get single node by ID |
-| `interview_node` | ✅ | ⚠️ | Stubbed - no actual re-interview |
+| `get_node` | ✅ | ✅ | Get single node by ID |
+| `interview_node` | ✅ | ✅ | Emits node_updated event (nodes stay fresh via subscriptions) |
 | `remove_node` | ✅ | ✅ | Decommission and remove node |
 | `ping_node` | ✅ | ⚠️ | Stubbed - returns cached IPs with true |
 | `get_node_ip_addresses` | ✅ | ✅ | Get node's current IP addresses |
@@ -125,50 +125,25 @@ Supports:
 
 ---
 
-### 1. `get_node` (Priority: Low)
+### ~~1. `get_node`~~ ✅ IMPLEMENTED
 
-**Purpose:** Get detailed information for a single node by ID.
+This command has been implemented. See `WebSocketControllerHandler.#handleGetNode()`.
 
-**Python Implementation:**
-```python
-async def get_node(self, node_id: int) -> MatterNodeData
-```
-
-**Use Cases:**
-- Fetch specific node without getting all nodes
-- More efficient for single-node queries
-
-**Implementation Notes:**
-- Simple wrapper around existing node storage
-- Return same `MatterNode` structure as `get_nodes`
+Returns a single `MatterNode` by ID - same structure as `get_nodes`.
 
 ---
 
-### 3. `interview_node` - Full Implementation (Priority: Medium)
+### ~~2. `interview_node`~~ ✅ IMPLEMENTED
 
-**Purpose:** Force a complete re-interview of a node to refresh all attributes.
+This command has been implemented. See `WebSocketControllerHandler.#handleInterviewNode()`.
 
-**Current State:** Stubbed - just triggers a node update event without actual re-interview.
-
-**Python Implementation:**
-- Disconnects and reconnects to node
-- Re-reads all attributes from all endpoints
-- Updates stored node data
-- Triggers `node_updated` event
-
-**Use Cases:**
-- Device firmware updated - need to discover new features
-- Suspected stale data
-- Debugging connectivity issues
-
-**Implementation Notes:**
-- Call `PairedNode.interview()` or equivalent
-- Should handle offline nodes gracefully
-- May take several seconds for complex devices
+Since Matter.js nodes are kept up-to-date via attribute subscriptions, we don't need
+to re-read all attributes. The implementation emits a `node_updated` event with the
+current (already fresh) data, matching Python server behavior.
 
 ---
 
-### 4. `ping_node` - Full Implementation (Priority: Low)
+### 1. `ping_node` - Full Implementation (Priority: Low)
 
 **Purpose:** Actually ping a node's IP addresses to verify network connectivity.
 
@@ -348,15 +323,13 @@ All high-priority items have been implemented! ✅
 
 ### Medium Priority (Important features)
 1. `endpoint_added`/`endpoint_removed` events - Bridge support
-2. `interview_node` - Full re-interview capability
 
 ### Low Priority (Nice to have)
-3. `get_node` - Single node query
-4. `ping_node` - Full implementation
-5. `server_shutdown` event
-6. `server_info_updated` event
-7. OTA update support
-8. `import_test_node` - Testing support
+2. `ping_node` - Full implementation
+3. `server_shutdown` event
+4. `server_info_updated` event
+5. OTA update support
+6. `import_test_node` - Testing support
 
 ---
 

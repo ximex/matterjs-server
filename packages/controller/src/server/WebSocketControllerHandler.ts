@@ -222,6 +222,9 @@ export class WebSocketControllerHandler implements WebServerHandler {
                 case "commission_on_network":
                     result = await this.#handleCommissionOnNetwork(args);
                     break;
+                case "get_node":
+                    result = await this.#handleGetNode(args);
+                    break;
                 case "get_node_ip_addresses":
                     result = await this.#handleGetNodeIpAddresses(args);
                     break;
@@ -238,8 +241,7 @@ export class WebSocketControllerHandler implements WebServerHandler {
                     result = await this.#handleWriteAttribute(args);
                     break;
                 case "interview_node":
-                    this.#handleInterviewNode(args);
-                    result = null;
+                    result = await this.#handleInterviewNode(args);
                     break;
                 case "ping_node": // Just simulating we did ...
                     result = await this.#handlePingNode(args);
@@ -429,6 +431,16 @@ export class WebSocketControllerHandler implements WebServerHandler {
         return nodeDetails;
     }
 
+    async #handleGetNode(args: ArgsOf<"get_node">): Promise<ResponseOf<"get_node">> {
+        const { node_id } = args;
+        const nodeId = NodeId(node_id);
+        const node = this.#commandHandler.getNode(nodeId);
+        if (node === undefined) {
+            throw new Error(`Node ${nodeId} not found`);
+        }
+        return await this.#collectNodeDetails(nodeId);
+    }
+
     async #handleGetNodeIpAddresses(
         args: ArgsOf<"get_node_ip_addresses">,
     ): Promise<ResponseOf<"get_node_ip_addresses">> {
@@ -526,15 +538,23 @@ export class WebSocketControllerHandler implements WebServerHandler {
         return this.#convertCommandDataToWebSocketTagBased(ClusterId(clusterId), commandName, result);
     }
 
-    #handleInterviewNode(args: ArgsOf<"interview_node">) {
+    async #handleInterviewNode(args: ArgsOf<"interview_node">): Promise<ResponseOf<"interview_node">> {
         const { node_id } = args;
         const nodeId = NodeId(node_id);
         const node = this.#commandHandler.getNode(nodeId);
         if (node === undefined) {
             throw new Error(`Node ${nodeId} not found`);
         }
-        // hack ... in fact we do not need to re-interview because always gets updated on connect
+
+        // Our nodes are kept up-to-date via attribute subscriptions, so we don't need
+        // to re-read all attributes like the Python server does.
+        // Just emit a node_updated event with the current (already fresh) data.
+        logger.info(`Interview requested for node ${nodeId} - emitting node_updated event`);
+
+        // Emit node_updated event (same as Python server behavior after interview)
         this.#commandHandler.events.nodeStateChanged.emit(nodeId, node.connectionState);
+
+        return null;
     }
 
     // Just simulating we did for now
