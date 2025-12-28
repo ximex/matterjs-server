@@ -68,6 +68,7 @@ import { CommissioningController, NodeCommissioningOptions } from "@project-chip
 import { NodeStates, PairedNode } from "@project-chip/matter.js/device";
 import { inspect } from "node:util";
 import { bytesToIpV4, bytesToIpV6 } from "../server/Converters.js";
+import { pingIp } from "../util/network.js";
 import {
     AttributeResponseStatus,
     CommissioningRequest,
@@ -95,6 +96,7 @@ import {
     AttributeWriteResult,
     BindingTarget,
     MatterSoftwareVersion,
+    NodePingResult,
     UpdateSource,
 } from "../types/WebSocketMessageTypes.js";
 
@@ -748,6 +750,55 @@ export class ControllerCommandHandler {
             }
         }
         return Array.from(addresses.values());
+    }
+
+    /**
+     * Ping a node on all its known IP addresses.
+     * @param nodeId The node ID to ping
+     * @param attempts Number of ping attempts per IP (default: 1)
+     * @returns A record of IP addresses to ping success status
+     */
+    async pingNode(nodeId: NodeId, attempts = 1): Promise<NodePingResult> {
+        const node = this.getNode(nodeId);
+        if (!node) {
+            throw new Error(`Node ${nodeId} not found`);
+        }
+
+        const result: NodePingResult = {};
+
+        // Get all IP addresses for the node (fresh lookup, not cached)
+        const ipAddresses = await this.getNodeIpAddresses(nodeId, false);
+
+        if (ipAddresses.length === 0) {
+            logger.info(`No IP addresses found for node ${nodeId}`);
+            return result;
+        }
+
+        logger.info(`Pinging node ${nodeId} on ${ipAddresses.length} addresses:`, ipAddresses);
+
+        // Ping all addresses in parallel
+        const pingPromises = ipAddresses.map(async ip => {
+            const cleanIp = ip.includes("%") ? ip.split("%")[0] : ip;
+            logger.debug(`Pinging ${cleanIp}`);
+            const success = await pingIp(ip, 10, attempts);
+            result[ip] = success;
+            logger.debug(`Ping result for ${cleanIp}: ${success}`);
+        });
+
+        await Promise.all(pingPromises);
+
+        // If the node is connected, treat the connection as valid
+        if (node.isConnected) {
+            // Find any successful ping or mark connection as reachable
+            const anySuccess = Object.values(result).some(v => v);
+            if (!anySuccess && ipAddresses.length > 0) {
+                // Node is connected but no pings succeeded - this can happen
+                // with Thread devices or certain network configurations
+                logger.info(`Node ${nodeId} is connected but no pings succeeded`);
+            }
+        }
+
+        return result;
     }
 
     async decommissionNode(nodeId: NodeId) {

@@ -254,7 +254,7 @@ export class WebSocketControllerHandler implements WebServerHandler {
                 case "interview_node":
                     result = await this.#handleInterviewNode(args);
                     break;
-                case "ping_node": // Just simulating we did ...
+                case "ping_node":
                     result = await this.#handlePingNode(args);
                     break;
                 case "diagnostics":
@@ -594,17 +594,9 @@ export class WebSocketControllerHandler implements WebServerHandler {
         return null;
     }
 
-    // Just simulating we did for now
     async #handlePingNode(args: ArgsOf<"ping_node">): Promise<ResponseOf<"ping_node">> {
         const { node_id } = args;
-        const ips = await this.#commandHandler.getNodeIpAddresses(NodeId(node_id), true);
-        return ips.reduce(
-            (acc, ip) => {
-                acc[ip] = true;
-                return acc;
-            },
-            {} as { [key: string]: boolean },
-        );
+        return await this.#commandHandler.pingNode(NodeId(node_id));
     }
 
     async #handleRemoveNode(args: ArgsOf<"remove_node">): Promise<ResponseOf<"remove_node">> {

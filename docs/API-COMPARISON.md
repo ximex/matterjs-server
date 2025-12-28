@@ -6,9 +6,11 @@ This document compares the WebSocket API functionality between the original Pyth
 
 | Category | Python Server | Matter.js Server | Coverage |
 |----------|--------------|------------------|----------|
-| Commands | 26 | 25 implemented | ~96% |
+| Commands | 26 | 25 fully implemented | ~96% |
 | Events | 9 | 9 | 100% |
 | Full functionality | - | - | ~99% |
+
+> **Note:** The only unimplemented command is `import_test_node` which is for testing/debugging only.
 
 ---
 
@@ -44,7 +46,7 @@ This document compares the WebSocket API functionality between the original Pyth
 | `get_node` | ✅ | ✅ | Get single node by ID |
 | `interview_node` | ✅ | ✅ | Emits node_updated event (nodes stay fresh via subscriptions) |
 | `remove_node` | ✅ | ✅ | Decommission and remove node |
-| `ping_node` | ✅ | ⚠️ | Stubbed - returns cached IPs with true |
+| `ping_node` | ✅ | ✅ | Pings all node IPs using system ping command |
 | `get_node_ip_addresses` | ✅ | ✅ | Get node's current IP addresses |
 | `set_default_fabric_label` | ✅ | ✅ | Set fabric label for new nodes |
 
@@ -143,30 +145,15 @@ current (already fresh) data, matching Python server behavior.
 
 ---
 
-### 1. `ping_node` - Full Implementation (Priority: Low)
+### ~~1. `ping_node`~~ ✅ IMPLEMENTED
 
-**Purpose:** Actually ping a node's IP addresses to verify network connectivity.
+This command has been fully implemented. See `ControllerCommandHandler.pingNode()`.
 
-**Current State:** Stubbed - returns cached IPs with `true` status without actual ping.
-
-**Python Implementation:**
-```python
-async def ping_node(
-    self,
-    node_id: int,
-    attempts: int = 1
-) -> dict[str, bool]  # {ip_address: reachable}
-```
-
-**Use Cases:**
-- Diagnose connectivity issues
-- Verify node is reachable before commands
-- Network troubleshooting
-
-**Implementation Notes:**
-- Use ICMP ping or Matter operational ping
-- Support multiple attempts for reliability
-- Return per-IP-address results
+Uses system ping commands via subprocess (like Python implementation):
+- IPv4: `ping -c 1 -W {timeout} {ip}`
+- IPv6: `ping -6 -c 1 -W {timeout} {ip}` (or `ping6` on macOS)
+- Pings all node IPs in parallel
+- Returns `{ip_address: boolean}` result
 
 ---
 
@@ -304,8 +291,7 @@ All medium-priority items have been implemented! ✅
 - `endpoint_added`/`endpoint_removed` events - Bridge support ✅
 
 ### Low Priority (Nice to have)
-1. `ping_node` - Full implementation (currently stubbed)
-2. `import_test_node` - Testing support
+1. `import_test_node` - Testing support (only remaining unimplemented command)
 
 ---
 
