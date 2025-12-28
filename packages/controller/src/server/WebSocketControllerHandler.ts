@@ -18,6 +18,7 @@ import { EndpointNumber, getClusterById, QrPairingCodeCodec } from "@matter/main
 import { Endpoint, NodeStates } from "@project-chip/matter.js/device";
 import { WebSocketServer } from "ws";
 import { ControllerCommandHandler } from "../controller/ControllerCommandHandler.js";
+import { CommissioningRequest } from "../types/CommandHandler.js";
 import { VendorIds } from "../data/VendorIDs.js";
 import { ClusterMap, ClusterMapEntry } from "../model/ModelMapper.js";
 import { HttpServer, WebServerHandler } from "../types/WebServer.js";
@@ -218,6 +219,9 @@ export class WebSocketControllerHandler implements WebServerHandler {
                 case "commission_with_code":
                     result = await this.#handleCommissionWithCode(args);
                     break;
+                case "commission_on_network":
+                    result = await this.#handleCommissionOnNetwork(args);
+                    break;
                 case "get_node_ip_addresses":
                     result = await this.#handleGetNodeIpAddresses(args);
                     break;
@@ -368,6 +372,50 @@ export class WebSocketControllerHandler implements WebServerHandler {
             wifiCredentials,
             threadCredentials,
         });
+        await this.#config.set({ nextNodeId: nextNodeId + 1 });
+
+        return await this.#collectNodeDetails(nodeId);
+    }
+
+    async #handleCommissionOnNetwork(
+        args: ArgsOf<"commission_on_network">,
+    ): Promise<ResponseOf<"commission_on_network">> {
+        const { setup_pin_code, filter_type, filter, ip_addr } = args;
+
+        const nextNodeId = this.#config.nextNodeId;
+
+        // Build commissioning request based on filter type
+        // Filter types: 0=None, 1=ShortDiscriminator, 2=LongDiscriminator, 3=VendorId, 4=DeviceType
+        let commissionRequest: CommissioningRequest;
+
+        const baseRequest = {
+            nodeId: NodeId(nextNodeId),
+            onNetworkOnly: true, // commission_on_network is always network-only
+            knownAddress: ip_addr ? { ip: ip_addr, port: 5540 } : undefined,
+        };
+
+        switch (filter_type) {
+            case 1: // Short discriminator
+                if (filter === undefined) throw new Error("filter required for filter_type 1 (short discriminator)");
+                commissionRequest = { ...baseRequest, passcode: setup_pin_code, shortDiscriminator: filter };
+                break;
+            case 2: // Long discriminator
+                if (filter === undefined) throw new Error("filter required for filter_type 2 (long discriminator)");
+                commissionRequest = { ...baseRequest, passcode: setup_pin_code, longDiscriminator: filter };
+                break;
+            case 3: // Vendor ID (requires product ID too, but Python server only passes vendor ID)
+                if (filter === undefined) throw new Error("filter required for filter_type 3 (vendor ID)");
+                commissionRequest = { ...baseRequest, passcode: setup_pin_code, vendorId: filter, productId: 0 };
+                break;
+            case 4: // Device type - not directly supported, fall back to no filter
+            case 0: // No filter
+            default:
+                // Discover any commissionable device with the passcode
+                commissionRequest = { ...baseRequest, passcode: setup_pin_code };
+                break;
+        }
+
+        const { nodeId } = await this.#commandHandler.commissionNode(commissionRequest);
         await this.#config.set({ nextNodeId: nextNodeId + 1 });
 
         return await this.#collectNodeDetails(nodeId);

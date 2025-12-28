@@ -6,9 +6,9 @@ This document compares the WebSocket API functionality between the original Pyth
 
 | Category | Python Server | Matter.js Server | Coverage |
 |----------|--------------|------------------|----------|
-| Commands | 26 | 23 implemented | ~88% |
+| Commands | 26 | 24 implemented | ~92% |
 | Events | 9 | 6 | ~67% |
-| Full functionality | - | - | ~80% |
+| Full functionality | - | - | ~82% |
 
 ---
 
@@ -24,7 +24,7 @@ This document compares the WebSocket API functionality between the original Pyth
 | Command | Python | Matter.js | Notes |
 |---------|--------|-----------|-------|
 | `commission_with_code` | ✅ | ✅ | Both support QR and manual pairing codes |
-| `commission_on_network` | ✅ | ❌ | Commission via setup PIN without pairing code |
+| `commission_on_network` | ✅ | ✅ | Commission via setup PIN with optional filters |
 | `open_commissioning_window` | ✅ | ✅ | Open window for multi-fabric commissioning |
 | `discover` | ✅ | ✅ | As `discover_commissionable_nodes` |
 
@@ -111,36 +111,21 @@ This document compares the WebSocket API functionality between the original Pyth
 
 ## Missing Functionality - Detailed
 
-### 1. `commission_on_network` (Priority: Medium)
+### ~~1. `commission_on_network`~~ ✅ IMPLEMENTED
 
-> **Note:** `set_acl_entry` and `set_node_binding` have been implemented and are no longer missing.
+This command has been implemented. See `WebSocketControllerHandler.#handleCommissionOnNetwork()`.
 
-**Purpose:** Commission a device that's already on the network using only the setup PIN code, without needing a QR code or manual pairing code.
+Supports:
+- `setup_pin_code` - Required passcode
+- `filter_type` - 0=None, 1=ShortDiscriminator, 2=LongDiscriminator, 3=VendorId
+- `filter` - Filter value based on type
+- `ip_addr` - Direct IP address for commissioning
 
-**Python Implementation:**
-```python
-async def commission_on_network(
-    self,
-    setup_pin_code: int,
-    filter_type: int = 0,        # Discovery filter type
-    filter: Any = None,          # Discovery filter value
-    ip_addr: str | None = None   # Optional: direct IP address
-) -> MatterNodeData
-```
-
-**Use Cases:**
-- Commissioning devices where QR code is damaged/unavailable
-- Programmatic commissioning when PIN is known
-- Direct commissioning via IP address
-
-**Implementation Notes:**
-- Uses `ChipDeviceController.CommissionOnNetwork()` in Python
-- Matter.js equivalent: Use `PeerCommissioner` with passcode-based pairing
-- Should support discovery filters (vendor ID, device type, etc.)
+> **Note:** `set_acl_entry` and `set_node_binding` have also been implemented.
 
 ---
 
-### 2. `get_node` (Priority: Low)
+### 1. `get_node` (Priority: Low)
 
 **Purpose:** Get detailed information for a single node by ID.
 
@@ -364,15 +349,14 @@ All high-priority items have been implemented! ✅
 ### Medium Priority (Important features)
 1. `endpoint_added`/`endpoint_removed` events - Bridge support
 2. `interview_node` - Full re-interview capability
-3. `commission_on_network` - Alternative commissioning
 
 ### Low Priority (Nice to have)
-4. `get_node` - Single node query
-5. `ping_node` - Full implementation
-6. `server_shutdown` event
-7. `server_info_updated` event
-8. OTA update support
-9. `import_test_node` - Testing support
+3. `get_node` - Single node query
+4. `ping_node` - Full implementation
+5. `server_shutdown` event
+6. `server_info_updated` event
+7. OTA update support
+8. `import_test_node` - Testing support
 
 ---
 
