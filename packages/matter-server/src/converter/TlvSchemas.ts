@@ -11,10 +11,10 @@ import {
     TlvField,
     TlvObject,
     TlvString,
-    TlvUInt8,
     TlvUInt16,
     TlvUInt32,
     TlvUInt64,
+    TlvUInt8,
     TypeFromSchema,
 } from "@matter/main/types";
 

@@ -430,52 +430,357 @@ describe("Integration Test", function () {
     });
 
     // =========================================================================
-    // Test Node Import Tests
+    // Test Node Tests (Comprehensive)
     // =========================================================================
 
-    describe("Test Node Import", function () {
-        it("should import test node from dump", async function () {
-            // Create a minimal test node dump
-            const testDump = JSON.stringify({
-                data: {
-                    node: {
-                        node_id: 999,
-                        date_commissioned: "2024-01-01T00:00:00Z",
-                        last_interview: "2024-01-01T00:00:00Z",
-                        interview_version: 6,
-                        available: true,
-                        is_bridge: false,
-                        attributes: {
-                            "0/40/1": "Imported Vendor",
-                            "0/40/3": "Imported Product",
+    describe("Test Node Functionality", function () {
+        /** Test node ID of the first imported node */
+        let testNodeId: bigint;
+        /** Test node ID of the second imported node (from multi-node import) */
+        let testNode2Id: bigint;
+
+        describe("Import Test Nodes", function () {
+            it("should import single test node from Home Assistant device diagnostic dump format", async function () {
+                // Create a test node dump in Home Assistant single-device diagnostic format
+                const singleNodeDump = JSON.stringify({
+                    data: {
+                        node: {
+                            node_id: 999, // Original ID (will be replaced with test node ID)
+                            date_commissioned: "2024-01-01T00:00:00.000000",
+                            last_interview: "2024-01-01T12:00:00.000000",
+                            interview_version: 6,
+                            available: true,
+                            is_bridge: false,
+                            attributes: {
+                                "0/40/0": 19, // DataModelRevision
+                                "0/40/1": "Test Vendor From Dump", // VendorName
+                                "0/40/2": 65521, // VendorId
+                                "0/40/3": "Test Product From Dump", // ProductName
+                                "0/40/4": 32768, // ProductId
+                                "0/40/5": "Test Node Label", // NodeLabel
+                                "0/29/0": [{ "0": 22, "1": 3 }], // DeviceTypeList
+                                "0/29/1": [40, 29], // ServerList
+                                "1/6/0": true, // OnOff
+                                "1/6/16384": true, // StartUpOnOff
+                            },
+                            attribute_subscriptions: [],
                         },
-                        attribute_subscriptions: [],
                     },
-                },
+                });
+
+                client.clearEvents();
+                await client.importTestNode(singleNodeDump);
+
+                // Should receive node_added event
+                const event = await client.waitForEvent("node_added", undefined, 5000);
+                expect(event).to.exist;
+
+                // Test node IDs start at 0xFFFF_FFFE_0000_0000
+                const nodeData = event.data as { node_id: bigint | number };
+                testNodeId = BigInt(nodeData.node_id);
+                expect(testNodeId >= BigInt("0xfffffffe00000000")).to.be.true;
+
+                // Verify the node data in the event
+                const node = event.data as { attributes: Record<string, unknown> };
+                expect(node.attributes["0/40/1"]).to.equal("Test Vendor From Dump");
+                expect(node.attributes["0/40/3"]).to.equal("Test Product From Dump");
             });
 
-            client.clearEvents();
-            await client.importTestNode(testDump);
+            it("should import multiple test nodes from Home Assistant server diagnostic dump format", async function () {
+                // Create a test dump with multiple nodes (server diagnostic format)
+                const multiNodeDump = JSON.stringify({
+                    data: {
+                        server: {
+                            nodes: {
+                                "1": {
+                                    node_id: 1,
+                                    date_commissioned: "2024-02-01T00:00:00.000000",
+                                    last_interview: "2024-02-01T12:00:00.000000",
+                                    interview_version: 6,
+                                    available: true,
+                                    is_bridge: false,
+                                    attributes: {
+                                        "0/40/1": "Multi-Node Vendor 1",
+                                        "0/40/3": "Multi-Node Product 1",
+                                        "0/40/5": "Node 1 Label",
+                                        "1/6/0": false,
+                                    },
+                                    attribute_subscriptions: [],
+                                },
+                                "2": {
+                                    node_id: 2,
+                                    date_commissioned: "2024-02-02T00:00:00.000000",
+                                    last_interview: "2024-02-02T12:00:00.000000",
+                                    interview_version: 6,
+                                    available: false,
+                                    is_bridge: true,
+                                    attributes: {
+                                        "0/40/1": "Multi-Node Vendor 2",
+                                        "0/40/3": "Multi-Node Bridge",
+                                        "0/29/0": [{ "0": 14, "1": 1 }], // Bridge device type
+                                    },
+                                    attribute_subscriptions: [],
+                                },
+                            },
+                        },
+                    },
+                });
 
-            // Should receive node_added event
-            const event = await client.waitForEvent("node_added", undefined, 5000);
-            expect(event).to.exist;
+                client.clearEvents();
+                await client.importTestNode(multiNodeDump);
 
-            // Test node IDs start at a high value (0xFFFF_FFFE_0000_0000)
-            const nodeData = event.data as { node_id: bigint | number };
-            expect(BigInt(nodeData.node_id) >= BigInt("0xfffffffe00000000")).to.be.true;
+                // Wait a bit for events to arrive
+                await new Promise(r => setTimeout(r, 500));
+
+                // Get all test nodes to find the imported ones
+                const nodes = await client.getNodes();
+                const multiImportNodes = nodes.filter(
+                    n => BigInt(n.node_id) >= BigInt("0xfffffffe00000000") && BigInt(n.node_id) !== testNodeId,
+                );
+
+                // Should have imported at least 2 more test nodes
+                expect(multiImportNodes.length).to.be.greaterThanOrEqual(2);
+
+                // Store one of the multi-import node IDs for later removal test
+                testNode2Id = BigInt(multiImportNodes[0].node_id);
+            });
+
+            it("should include all test nodes in get_nodes", async function () {
+                const nodes = await client.getNodes();
+
+                // Filter to test nodes only
+                const testNodes = nodes.filter(n => BigInt(n.node_id) >= BigInt("0xfffffffe00000000"));
+
+                // Should have at least 3 test nodes (1 from single import + 2 from multi import)
+                expect(testNodes.length).to.be.greaterThanOrEqual(3);
+
+                // Find specific test nodes
+                const firstTestNode = testNodes.find(n => BigInt(n.node_id) === testNodeId);
+                expect(firstTestNode).to.exist;
+                expect(firstTestNode!.attributes["0/40/1"]).to.equal("Test Vendor From Dump");
+
+                // Find one of the multi-import nodes
+                const bridgeNode = testNodes.find(n => n.is_bridge === true);
+                expect(bridgeNode).to.exist;
+                expect(bridgeNode!.attributes["0/40/3"]).to.equal("Multi-Node Bridge");
+            });
+
+            it("should get single test node via get_node", async function () {
+                const node = await client.getNode(testNodeId);
+
+                expect(BigInt(node.node_id)).to.equal(testNodeId);
+                expect(node.attributes["0/40/1"]).to.equal("Test Vendor From Dump");
+                expect(node.attributes["0/40/3"]).to.equal("Test Product From Dump");
+                expect(node.available).to.be.true;
+                expect(node.is_bridge).to.be.false;
+            });
         });
 
-        it("should include test node in get_nodes", async function () {
-            const nodes = await client.getNodes();
+        describe("Read Attributes from Test Node", function () {
+            it("should read single attribute from test node", async function () {
+                const attrs = await client.readAttribute(testNodeId, "0/40/1");
 
-            // Should have real node + test node
-            expect(nodes.length).to.be.greaterThanOrEqual(2);
+                expect(attrs).to.have.property("0/40/1");
+                expect(attrs["0/40/1"]).to.equal("Test Vendor From Dump");
+            });
 
-            // Find the test node (high node ID)
-            const testNode = nodes.find(n => BigInt(n.node_id) >= BigInt("0xfffffffe00000000"));
-            expect(testNode).to.exist;
-            expect(testNode!.attributes["0/40/1"]).to.equal("Imported Vendor");
+            it("should read multiple attributes from test node", async function () {
+                const attrs = await client.readAttribute(testNodeId, ["0/40/1", "0/40/3", "0/40/5"]);
+
+                expect(attrs).to.have.property("0/40/1");
+                expect(attrs).to.have.property("0/40/3");
+                expect(attrs).to.have.property("0/40/5");
+                expect(attrs["0/40/1"]).to.equal("Test Vendor From Dump");
+                expect(attrs["0/40/3"]).to.equal("Test Product From Dump");
+                expect(attrs["0/40/5"]).to.equal("Test Node Label");
+            });
+
+            it("should read attributes with endpoint wildcard from test node", async function () {
+                const attrs = await client.readAttribute(testNodeId, "*/40/1");
+
+                // Should return vendor name from endpoint 0
+                expect(attrs).to.have.property("0/40/1");
+                expect(attrs["0/40/1"]).to.equal("Test Vendor From Dump");
+            });
+
+            it("should read attributes with cluster wildcard from test node", async function () {
+                const attrs = await client.readAttribute(testNodeId, "0/*/1");
+
+                // Should return attributes with ID 1 from multiple clusters on endpoint 0
+                expect(attrs).to.have.property("0/40/1"); // VendorName from BasicInformation
+                expect(attrs).to.have.property("0/29/1"); // ServerList from Descriptor
+            });
+
+            it("should read all attributes from cluster with attribute wildcard from test node", async function () {
+                const attrs = await client.readAttribute(testNodeId, "0/40/*");
+
+                // Should return all BasicInformation attributes
+                expect(attrs).to.have.property("0/40/0"); // DataModelRevision
+                expect(attrs).to.have.property("0/40/1"); // VendorName
+                expect(attrs).to.have.property("0/40/2"); // VendorId
+                expect(attrs).to.have.property("0/40/3"); // ProductName
+                expect(attrs).to.have.property("0/40/4"); // ProductId
+                expect(attrs).to.have.property("0/40/5"); // NodeLabel
+            });
+
+            it("should return undefined for non-existent attributes on test node", async function () {
+                const attrs = await client.readAttribute(testNodeId, "99/99/99");
+
+                // Non-existent path returns undefined value
+                expect(attrs["99/99/99"]).to.be.undefined;
+            });
+        });
+
+        describe("Write Attributes to Test Node", function () {
+            it("should accept write attribute to test node (mock operation)", async function () {
+                // Write to NodeLabel attribute
+                const result = await client.writeAttribute(testNodeId, "0/40/5", "New Test Label");
+
+                // Test nodes return success (status 0) for writes
+                expect(result).to.be.an("array");
+                const writeResult = result as Array<{ Path: object; Status: number }>;
+                expect(writeResult[0].Status).to.equal(0);
+            });
+        });
+
+        describe("Device Commands on Test Node", function () {
+            it("should accept device command on test node (mock operation)", async function () {
+                // Send toggle command to OnOff cluster
+                const result = await client.deviceCommand(testNodeId, 1, 6, "toggle", {});
+
+                // Test nodes return null for command results
+                expect(result).to.be.null;
+            });
+
+            it("should accept on command on test node", async function () {
+                const result = await client.deviceCommand(testNodeId, 1, 6, "on", {});
+                expect(result).to.be.null;
+            });
+
+            it("should accept command with payload on test node", async function () {
+                // Send identify command with identifyTime payload
+                const result = await client.deviceCommand(testNodeId, 1, 3, "identify", {
+                    identify_time: 10,
+                });
+                expect(result).to.be.null;
+            });
+        });
+
+        describe("Network Operations on Test Node", function () {
+            it("should return mock IP addresses for test node", async function () {
+                const ips = await client.getNodeIpAddresses(testNodeId, false, false);
+
+                expect(ips).to.be.an("array");
+                expect(ips.length).to.be.greaterThan(0);
+                // Test nodes return mock IPs
+                expect(ips).to.include("0.0.0.0");
+            });
+
+            it("should return mock scoped IP addresses for test node", async function () {
+                const ips = await client.getNodeIpAddresses(testNodeId, false, true);
+
+                expect(ips).to.be.an("array");
+                expect(ips.length).to.be.greaterThan(0);
+            });
+
+            it("should return mock ping results for test node", async function () {
+                const result = await client.pingNode(testNodeId);
+
+                expect(result).to.be.an("object");
+                // Test nodes return success for all mock IPs
+                const values = Object.values(result);
+                expect(values.length).to.be.greaterThan(0);
+                expect(values.every(v => v === true)).to.be.true;
+            });
+
+            it("should return mock ping results with multiple attempts", async function () {
+                const result = await client.pingNode(testNodeId, 3);
+
+                expect(result).to.be.an("object");
+                expect(Object.values(result).every(v => v === true)).to.be.true;
+            });
+        });
+
+        describe("Interview Test Node", function () {
+            it("should trigger node_updated event when interviewing test node", async function () {
+                client.clearEvents();
+
+                await client.interviewNode(testNodeId);
+
+                // Should receive node_updated event for the test node
+                const event = await client.waitForEvent(
+                    "node_updated",
+                    data => BigInt((data as { node_id: bigint | number }).node_id) === testNodeId,
+                    5000,
+                );
+                expect(event).to.exist;
+                expect(BigInt((event.data as { node_id: bigint | number }).node_id)).to.equal(testNodeId);
+            });
+        });
+
+        describe("Remove Test Node", function () {
+            it("should remove test node and emit node_removed event", async function () {
+                client.clearEvents();
+
+                // Remove the second test node (from multi-node import)
+                await client.removeNode(testNode2Id);
+
+                // Should receive node_removed event
+                const event = await client.waitForEvent(
+                    "node_removed",
+                    data => BigInt(data as bigint | number) === testNode2Id,
+                    5000,
+                );
+                expect(event).to.exist;
+                expect(BigInt(event.data as bigint | number)).to.equal(testNode2Id);
+
+                // Verify node is no longer in get_nodes
+                const nodes = await client.getNodes();
+                const removedNode = nodes.find(n => BigInt(n.node_id) === testNode2Id);
+                expect(removedNode).to.be.undefined;
+            });
+
+            it("should throw error when getting removed test node", async function () {
+                try {
+                    await client.getNode(testNode2Id);
+                    expect.fail("Should have thrown an error");
+                } catch (error) {
+                    expect((error as Error).message).to.include("not");
+                }
+            });
+
+            it("should still have other test nodes after removing one", async function () {
+                const nodes = await client.getNodes();
+                const testNodes = nodes.filter(n => BigInt(n.node_id) >= BigInt("0xfffffffe00000000"));
+
+                // Should still have the first test node and one from multi-import
+                expect(testNodes.length).to.be.greaterThanOrEqual(2);
+
+                // First test node should still exist
+                const firstTestNode = testNodes.find(n => BigInt(n.node_id) === testNodeId);
+                expect(firstTestNode).to.exist;
+            });
+        });
+
+        describe("Test Node Availability Filtering", function () {
+            it("should filter unavailable test nodes with only_available=true", async function () {
+                // One of our imported nodes has available=false (the bridge)
+                const availableNodes = await client.getNodes(true);
+                const unavailableTestNodes = availableNodes.filter(
+                    n => BigInt(n.node_id) >= BigInt("0xfffffffe00000000") && n.available === false,
+                );
+
+                // Should not include unavailable nodes
+                expect(unavailableTestNodes.length).to.equal(0);
+            });
+
+            it("should include unavailable test nodes with only_available=false", async function () {
+                const allNodes = await client.getNodes(false);
+                const testNodes = allNodes.filter(n => BigInt(n.node_id) >= BigInt("0xfffffffe00000000"));
+
+                // Check we have at least one available and verify they're all returned
+                expect(testNodes.length).to.be.greaterThanOrEqual(2);
+            });
         });
     });
 

@@ -209,3 +209,66 @@ export type OpenCommissioningWindowResponse = {
     manualCode: string;
     qrCode: string;
 };
+
+import { AttributesData, MatterNode } from "./WebSocketMessageTypes.js";
+
+/** MatterNode details for WebSocket API - re-export from WebSocketMessageTypes */
+export type { AttributesData };
+export type MatterNodeData = MatterNode;
+
+/**
+ * Interface for node command handlers.
+ * Both real nodes (ControllerCommandHandler) and test nodes (TestNodeCommandHandler) implement this.
+ */
+export interface NodeCommandHandler {
+    /**
+     * Check if this handler manages the given node ID.
+     */
+    hasNode(nodeId: NodeId): boolean;
+
+    /**
+     * Get all node IDs managed by this handler.
+     */
+    getNodeIds(): NodeId[];
+
+    /**
+     * Get full node details in WebSocket API format.
+     */
+    getNodeDetails(nodeId: NodeId): Promise<MatterNodeData>;
+
+    /**
+     * Read multiple attributes from a node by path strings.
+     * Handles wildcards in paths (e.g., asterisk/29/asterisk for all descriptor attributes).
+     */
+    handleReadAttributes(nodeId: NodeId, attributePaths: string[], fabricFiltered?: boolean): Promise<AttributesData>;
+
+    /**
+     * Read attributes from a node.
+     */
+    handleReadAttribute(data: ReadAttributeRequest): Promise<ReadAttributeResponse>;
+
+    /**
+     * Write an attribute to a node.
+     */
+    handleWriteAttribute(data: WriteAttributeRequest): Promise<AttributeResponseStatus>;
+
+    /**
+     * Invoke a command on a node.
+     */
+    handleInvoke(data: InvokeRequest): Promise<unknown>;
+
+    /**
+     * Get IP addresses for a node.
+     */
+    getNodeIpAddresses(nodeId: NodeId, preferCache?: boolean): Promise<string[]>;
+
+    /**
+     * Ping a node.
+     */
+    pingNode(nodeId: NodeId, attempts?: number): Promise<Record<string, boolean>>;
+
+    /**
+     * Remove/decommission a node.
+     */
+    removeNode(nodeId: NodeId): Promise<void>;
+}

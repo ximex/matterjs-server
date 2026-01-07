@@ -26,10 +26,8 @@ export class MatterClient {
     public nodes: Record<number, MatterNode> = {};
     public serverBaseAddress: string;
     // Using 'unknown' for resolve since the actual types vary by command
-    private _result_futures: Record<
-        string,
-        { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }
-    > = {};
+    private _result_futures: Record<string, { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }> =
+        {};
     private msgId = 0;
     private eventListeners: Record<string, Array<() => void>> = {};
 

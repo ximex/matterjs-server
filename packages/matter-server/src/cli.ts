@@ -68,10 +68,7 @@ function collectAddresses(value: string, previous: string[]): string[] {
 export function parseCliArgs(argv?: string[]): CliOptions {
     const program = new Command();
 
-    program
-        .name("matter-server")
-        .description("Matter Controller Server using WebSockets.")
-        .version("0.0.0-git");
+    program.name("matter-server").description("Matter Controller Server using WebSockets.").version("0.0.0-git");
 
     program
         .option("--vendorid <id>", "Vendor ID for the Fabric", parseIntOption, DEFAULT_VENDOR_ID)
@@ -84,15 +81,9 @@ export function parseCliArgs(argv?: string[]): CliOptions {
             collectAddresses,
             [],
         )
+        .addOption(new Option("--log-level <level>", "Global logging level").choices(LOG_LEVELS).default("info"))
         .addOption(
-            new Option("--log-level <level>", "Global logging level")
-                .choices(LOG_LEVELS)
-                .default("info"),
-        )
-        .addOption(
-            new Option("--log-level-sdk <level>", "Matter SDK logging level")
-                .choices(SDK_LOG_LEVELS)
-                .default("error"),
+            new Option("--log-level-sdk <level>", "Matter SDK logging level").choices(SDK_LOG_LEVELS).default("error"),
         )
         .option("--log-file <path>", "Log file path (optional)")
         .option("--primary-interface <interface>", "Primary network interface for link-local addresses")

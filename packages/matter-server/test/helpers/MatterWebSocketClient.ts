@@ -47,6 +47,54 @@ export class MatterWebSocketClient {
 
     constructor(private readonly wsUrl: string) {}
 
+    /**
+     * Serialize object to JSON with BigInt support.
+     * BigInt values larger than MAX_SAFE_INTEGER are serialized as raw decimal numbers.
+     */
+    private toJson(object: object): string {
+        const replacements = new Array<{ from: string; to: string }>();
+        let result = JSON.stringify(object, (_key, value) => {
+            if (typeof value === "bigint") {
+                if (value > Number.MAX_SAFE_INTEGER) {
+                    // Store replacement: quoted hex string -> raw decimal number
+                    replacements.push({ from: `"0x${value.toString(16)}"`, to: value.toString() });
+                    return `0x${value.toString(16)}`;
+                } else {
+                    return Number(value);
+                }
+            }
+            return value;
+        });
+        // Replace quoted hex strings with raw decimal numbers
+        for (const { from, to } of replacements) {
+            result = result.replace(from, to);
+        }
+        return result;
+    }
+
+    /**
+     * Parse JSON with BigInt support for large integers.
+     * Numbers larger than MAX_SAFE_INTEGER are converted to BigInt.
+     */
+    private parseJson(json: string): unknown {
+        // Replace large integers (> MAX_SAFE_INTEGER) with BigInt-style strings
+        // Match integers that are too large for precise Number representation
+        const processed = json.replace(/:\s*(\d{16,})/g, (_match, digits) => {
+            const num = BigInt(digits);
+            if (num > Number.MAX_SAFE_INTEGER) {
+                return `: "${digits}n"`;
+            }
+            return _match;
+        });
+
+        return JSON.parse(processed, (_key, value) => {
+            if (typeof value === "string" && /^\d+n$/.test(value)) {
+                return BigInt(value.slice(0, -1));
+            }
+            return value;
+        });
+    }
+
     async connect(): Promise<ServerInfoMessage> {
         return new Promise((resolve, reject) => {
             const ws = new WebSocket(this.wsUrl);
@@ -57,7 +105,7 @@ export class MatterWebSocketClient {
             });
 
             ws.on("message", (data: WebSocket.Data) => {
-                const message = JSON.parse(data.toString());
+                const message = this.parseJson(data.toString());
                 this.handleMessage(message, resolve);
             });
 
@@ -132,7 +180,7 @@ export class MatterWebSocketClient {
                 resolve: value => resolve(value as T),
                 reject,
             });
-            this.ws!.send(JSON.stringify(message));
+            this.ws!.send(this.toJson(message));
         });
     }
 
@@ -148,7 +196,7 @@ export class MatterWebSocketClient {
     }
 
     async deviceCommand(
-        nodeId: number,
+        nodeId: number | bigint,
         endpointId: number,
         clusterId: number,
         commandName: string,
@@ -164,7 +212,7 @@ export class MatterWebSocketClient {
         });
     }
 
-    async removeNode(nodeId: number): Promise<void> {
+    async removeNode(nodeId: number | bigint): Promise<void> {
         await this.sendCommand("remove_node", { node_id: nodeId });
     }
 
@@ -176,7 +224,7 @@ export class MatterWebSocketClient {
         return this.sendCommand<MatterNode[]>("get_nodes", { only_available: onlyAvailable });
     }
 
-    async getNode(nodeId: number): Promise<MatterNode> {
+    async getNode(nodeId: number | bigint): Promise<MatterNode> {
         return this.sendCommand<MatterNode>("get_node", { node_id: nodeId });
     }
 
@@ -198,7 +246,11 @@ export class MatterWebSocketClient {
         return this.sendCommand<CommissionableNodeData[]>("discover_commissionable_nodes");
     }
 
-    async readAttribute(nodeId: number, attributePath: string | string[], fabricFiltered = false): Promise<AttributesData> {
+    async readAttribute(
+        nodeId: number | bigint,
+        attributePath: string | string[],
+        fabricFiltered = false,
+    ): Promise<AttributesData> {
         return this.sendCommand<AttributesData>("read_attribute", {
             node_id: nodeId,
             attribute_path: attributePath,
@@ -206,7 +258,7 @@ export class MatterWebSocketClient {
         });
     }
 
-    async writeAttribute(nodeId: number, attributePath: string, value: unknown): Promise<unknown> {
+    async writeAttribute(nodeId: number | bigint, attributePath: string, value: unknown): Promise<unknown> {
         return this.sendCommand("write_attribute", {
             node_id: nodeId,
             attribute_path: attributePath,
@@ -214,14 +266,14 @@ export class MatterWebSocketClient {
         });
     }
 
-    async pingNode(nodeId: number, attempts = 1): Promise<NodePingResult> {
+    async pingNode(nodeId: number | bigint, attempts = 1): Promise<NodePingResult> {
         return this.sendCommand<NodePingResult>("ping_node", {
             node_id: nodeId,
             attempts,
         });
     }
 
-    async getNodeIpAddresses(nodeId: number, preferCache = false, scoped = false): Promise<string[]> {
+    async getNodeIpAddresses(nodeId: number | bigint, preferCache = false, scoped = false): Promise<string[]> {
         return this.sendCommand<string[]>("get_node_ip_addresses", {
             node_id: nodeId,
             prefer_cache: preferCache,
@@ -229,16 +281,16 @@ export class MatterWebSocketClient {
         });
     }
 
-    async interviewNode(nodeId: number): Promise<void> {
+    async interviewNode(nodeId: number | bigint): Promise<void> {
         await this.sendCommand("interview_node", { node_id: nodeId });
     }
 
-    async getMatterFabrics(nodeId: number): Promise<MatterFabricData[]> {
+    async getMatterFabrics(nodeId: number | bigint): Promise<MatterFabricData[]> {
         return this.sendCommand<MatterFabricData[]>("get_matter_fabrics", { node_id: nodeId });
     }
 
     async openCommissioningWindow(
-        nodeId: number,
+        nodeId: number | bigint,
         timeout: number,
     ): Promise<{ setup_pin_code: number; setup_manual_code: string; setup_qr_code: string }> {
         return this.sendCommand("open_commissioning_window", {
@@ -277,18 +329,18 @@ export class MatterWebSocketClient {
         });
     }
 
-    async removeMatterFabric(nodeId: number, fabricIndex: number): Promise<void> {
+    async removeMatterFabric(nodeId: number | bigint, fabricIndex: number): Promise<void> {
         await this.sendCommand("remove_matter_fabric", {
             node_id: nodeId,
             fabric_index: fabricIndex,
         });
     }
 
-    async checkNodeUpdate(nodeId: number): Promise<unknown> {
+    async checkNodeUpdate(nodeId: number | bigint): Promise<unknown> {
         return this.sendCommand("check_node_update", { node_id: nodeId });
     }
 
-    async updateNode(nodeId: number, softwareVersion: number): Promise<unknown> {
+    async updateNode(nodeId: number | bigint, softwareVersion: number): Promise<unknown> {
         return this.sendCommand("update_node", { nodeId, softwareVersion });
     }
 

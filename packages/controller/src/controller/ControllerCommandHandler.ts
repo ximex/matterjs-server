@@ -6,6 +6,7 @@
 
 import { AsyncObservable } from "@matter/general";
 import {
+    ClusterBehavior,
     FabricId,
     FabricIndex,
     Logger,
@@ -37,6 +38,7 @@ import {
     Command,
     DeviceTypeId,
     EndpointNumber,
+    getClusterById,
     GroupId,
     ManualPairingCodeCodec,
     QrPairingCodeCodec,
@@ -54,16 +56,26 @@ import {
     VendorId,
 } from "@matter/main/types";
 import { CommissioningController, NodeCommissioningOptions } from "@project-chip/matter.js";
-import { NodeStates, PairedNode } from "@project-chip/matter.js/device";
-import { bytesToIpV4, bytesToIpV6 } from "../server/Converters.js";
+import { Endpoint, NodeStates, PairedNode } from "@project-chip/matter.js/device";
+import { ClusterMap, ClusterMapEntry } from "../model/ModelMapper.js";
+import {
+    buildAttributePath,
+    bytesToIpV4,
+    bytesToIpV6,
+    convertMatterToWebSocketTagBased,
+    getDateAsString,
+    splitAttributePath,
+} from "../server/Converters.js";
 import {
     AttributeResponseStatus,
+    AttributesData,
     CommissioningRequest,
     CommissioningResponse,
     DiscoveryRequest,
     DiscoveryResponse,
     InvokeByIdRequest,
     InvokeRequest,
+    MatterNodeData,
     OpenCommissioningWindowRequest,
     OpenCommissioningWindowResponse,
     ReadAttributeRequest,
@@ -248,6 +260,197 @@ export class ControllerCommandHandler {
 
     getNode(nodeId: NodeId) {
         return this.#nodes.get(nodeId);
+    }
+
+    hasNode(nodeId: NodeId): boolean {
+        return this.#nodes.has(nodeId);
+    }
+
+    /**
+     * Alias for decommissionNode to match NodeCommandHandler interface.
+     */
+    removeNode(nodeId: NodeId) {
+        return this.decommissionNode(nodeId);
+    }
+
+    /**
+     * Get full node details in WebSocket API format.
+     * @param nodeId The node ID
+     * @param lastInterviewDate Optional last interview date (tracked externally)
+     */
+    async getNodeDetails(nodeId: NodeId, lastInterviewDate?: Date): Promise<MatterNodeData> {
+        const node = this.#nodes.get(nodeId);
+        if (node === undefined) {
+            throw new Error(`Node ${nodeId} not found`);
+        }
+
+        let isBridge = false;
+        const attributes: AttributesData = {};
+
+        if (node.initialized) {
+            const rootEndpoint = node.getRootEndpoint();
+            if (rootEndpoint !== undefined) {
+                this.#collectAttributesFromEndpoint(rootEndpoint, attributes);
+
+                // Bridge detection: Check endpoint 1's Descriptor cluster (29) DeviceTypeList attribute (0)
+                // for device type 14 (Aggregator), matching Python Matter Server behavior
+                const endpoint1DeviceTypes = attributes["1/29/0"];
+                if (Array.isArray(endpoint1DeviceTypes)) {
+                    isBridge = endpoint1DeviceTypes.some(entry => entry["0"] === 14);
+                }
+            }
+        } else {
+            logger.info(`Waiting for node ${nodeId} to be initialized ${NodeStates[node.connectionState]}`);
+        }
+
+        // Get commissioned date from node state if available
+        const commissionedAt = node.state.commissioning.commissionedAt;
+        const dateCommissioned = commissionedAt !== undefined ? new Date(commissionedAt) : new Date();
+
+        return {
+            node_id: node.nodeId,
+            date_commissioned: getDateAsString(dateCommissioned),
+            last_interview: getDateAsString(lastInterviewDate ?? new Date()),
+            interview_version: 6,
+            available: node.isConnected,
+            is_bridge: isBridge,
+            attributes,
+            attribute_subscriptions: [],
+        };
+    }
+
+    /**
+     * Read multiple attributes from a node by path strings.
+     * Handles wildcards in paths.
+     */
+    async handleReadAttributes(
+        nodeId: NodeId,
+        attributePaths: string[],
+        fabricFiltered = false,
+    ): Promise<AttributesData> {
+        const node = this.#nodes.get(nodeId);
+        if (node === undefined) {
+            throw new Error(`Node ${nodeId} not found`);
+        }
+
+        const result: AttributesData = {};
+
+        // Check if any path contains wildcards - if so, we need to collect all attributes from node
+        const hasWildcards = attributePaths.some(path => path.includes("*"));
+        let allAttributes: AttributesData | undefined;
+
+        if (hasWildcards) {
+            if (!node.initialized) {
+                throw new Error(`Node ${nodeId} not ready`);
+            }
+            const rootEndpoint = node.getRootEndpoint();
+            if (rootEndpoint === undefined) {
+                throw new Error(`Node ${nodeId} not ready`);
+            }
+            allAttributes = {};
+            this.#collectAttributesFromEndpoint(rootEndpoint, allAttributes);
+        }
+
+        // Process each attribute path
+        for (const path of attributePaths) {
+            const { endpointId, clusterId, attributeId } = splitAttributePath(path);
+
+            // For wildcard paths, filter from collected attributes
+            if (path.includes("*") && allAttributes !== undefined) {
+                for (const [attrPath, value] of Object.entries(allAttributes)) {
+                    const parts = attrPath.split("/").map(Number);
+                    if (
+                        (endpointId === undefined || parts[0] === endpointId) &&
+                        (clusterId === undefined || parts[1] === clusterId) &&
+                        (attributeId === undefined || parts[2] === attributeId)
+                    ) {
+                        result[attrPath] = value;
+                    }
+                }
+                continue;
+            }
+
+            // For non-wildcard paths, use the SDK to read the specific attribute
+            const { values, status } = await this.handleReadAttribute({
+                nodeId,
+                endpointId,
+                clusterId,
+                attributeId,
+                fabricFiltered,
+            });
+
+            if (values.length) {
+                for (const valueData of values) {
+                    const { pathStr, value } = this.#convertAttributeToWebSocket(
+                        {
+                            endpointId: EndpointNumber(valueData.endpointId),
+                            clusterId: ClusterId(valueData.clusterId),
+                            attributeId: valueData.attributeId,
+                        },
+                        valueData.value,
+                    );
+                    result[pathStr] = value;
+                }
+            } else if (status && status.length > 0) {
+                logger.warn(`Failed to read attribute ${path}: status=${JSON.stringify(status)}`);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Collect all attributes from an endpoint and its children into WebSocket format.
+     */
+    #collectAttributesFromEndpoint(endpoint: Endpoint, attributesData: AttributesData) {
+        const endpointId = endpoint.number!;
+        for (const behavior of endpoint.endpoint.behaviors.active) {
+            if (!ClusterBehavior.is(behavior)) {
+                continue;
+            }
+            const cluster = behavior.cluster;
+            const clusterId = cluster.id;
+            const clusterData = ClusterMap[cluster.name.toLowerCase()];
+            const clusterState = endpoint.endpoint.stateOf(behavior);
+
+            for (const attributeName in cluster.attributes) {
+                const attribute = cluster.attributes[attributeName];
+                if (attribute === undefined) {
+                    continue;
+                }
+                const attributeValue = (clusterState as Record<string, unknown>)[attributeName];
+                const { pathStr, value } = this.#convertAttributeToWebSocket(
+                    { endpointId, clusterId, attributeId: attribute.id },
+                    attributeValue,
+                    clusterData,
+                );
+                attributesData[pathStr] = value;
+            }
+        }
+
+        // Recursively collect from child endpoints
+        for (const childEndpoint of endpoint.getChildEndpoints()) {
+            this.#collectAttributesFromEndpoint(childEndpoint, attributesData);
+        }
+    }
+
+    /**
+     * Convert attribute data to WebSocket tag-based format.
+     */
+    #convertAttributeToWebSocket(
+        path: { endpointId: EndpointNumber; clusterId: ClusterId; attributeId: number },
+        value: unknown,
+        clusterData?: ClusterMapEntry,
+    ) {
+        const { endpointId, clusterId, attributeId } = path;
+        if (!clusterData) {
+            const cluster = getClusterById(clusterId);
+            clusterData = ClusterMap[cluster.name.toLowerCase()];
+        }
+        return {
+            pathStr: buildAttributePath(endpointId, clusterId, attributeId),
+            value: convertMatterToWebSocketTagBased(value, clusterData?.attributes[attributeId], clusterData?.model),
+        };
     }
 
     /**

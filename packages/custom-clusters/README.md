@@ -1,6 +1,7 @@
 # Custom Clusters
 
 This package contains definitions for vendor-specific (custom) Matter clusters that are not part of the official Matter specification.
+The OHF community provides the content of these clusters. There is no guarantee that the definitions are validated or approved by the respective vendors.
 
 ## Overview
 
@@ -51,19 +52,17 @@ export * from "./myvendor.js";
 
 Use these type mappings when converting from Python Matter Server definitions:
 
-| Python Type | TypeScript Decorator | TypeScript Property Type |
-|-------------|----------------------|--------------------------|
-| `int`       | `int64`              | `number \| bigint`       |
-| `uint`      | `uint64`             | `number \| bigint`       |
-| `float32`   | `single`             | `number`                 |
-| `float64`   | `double`             | `number`                 |
-| `bool`      | `bool`               | `boolean`                |
+| Python Type | TypeScript Decorator | TypeScript Property Type       |
+|-------------|----------------------|--------------------------------|
+| `int`       | `int32` or `int64`   | `number` or `number \| bigint` |
+| `uint`      | `uint32` or `uint64` | `number` or `number \| bigint` |
+| `float32`   | `single`             | `number`                       |
+| `float64`   | `double`             | `number`                       |
+| `bool`      | `bool`               | `boolean`                      |
 
-TypeScript also supports other variants of `int*` and `uint*` types. Please choose the one that matches your use case and the maximum contained value. if not known it is safe to assume 64biut precision for both signed and unsigned types.
+TypeScript also supports other variants of `int*` and `uint*` types. Please choose the one that matches your use case and the maximum contained value. If not known, and the usecase might imply higher values, it is safe to use 64bit precision for both signed and unsigned types.
 
 ### Available Type Imports
-
-From `@matter/main/model`:
 
 ```typescript
 import {
@@ -88,19 +87,23 @@ import {
 } from "@matter/main/model";
 ```
 
-### Hex Value Convention
+### How to provide the IDs
 
-Use lowercase hex values for consistency:
+Please provide all Ids for clusters or attributes as lowercase Hexadecimal values.
 
 ```typescript
 // Good
 @cluster(0x130afc01)
 @attribute(0x130a0006, int32)
-
-// Avoid
-@cluster(0x130AFC01)
-@attribute(0x130A0006, int32)
 ```
+
+### Further Annotation options
+The annotations also support the following options:
+* `mandatory`: Use this to declare an attribute as mandatory. Should mostly not be relevant. By default, all attributes are created optional
+* `nullable`: Use this to specify if the attribute is nullable which makes "null" a valid value.
+* `listOf(datatype)`: Use this to declare an attribute to be an array of the given datatype.
+
+More advanced modifier or own datatype definitions can be added on request. Contact us.
 
 ## Registration
 

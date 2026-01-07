@@ -210,36 +210,36 @@ describe("Converters", () => {
         describe("bitmaps", () => {
             it("should convert bitmap number to object with boolean flags", () => {
                 // Cluster 49 (NetworkCommissioning), attribute 65532 (FeatureMap) is bitmap
-                // Features: WI=bit0, TH=bit1, ET=bit2
+                // Features: WiFiNetworkInterface=bit0, ThreadNetworkInterface=bit1, EthernetNetworkInterface=bit2
                 const networkCommCluster = ClusterMap[49]!;
                 const featureMapAttr = networkCommCluster.attributes[65532];
 
-                // Value 4 = ET (bit 2)
+                // Value 4 = EthernetNetworkInterface (bit 2)
                 const result = convertWebSocketTagBasedToMatter(4, featureMapAttr, networkCommCluster.model) as Record<
                     string,
                     boolean
                 >;
 
                 expect(result).to.be.an("object");
-                expect(result.wi).to.equal(false); // bit 0
-                expect(result.th).to.equal(false); // bit 1
-                expect(result.et).to.equal(true); // bit 2
+                expect(result.wiFiNetworkInterface).to.equal(false); // bit 0
+                expect(result.threadNetworkInterface).to.equal(false); // bit 1
+                expect(result.ethernetNetworkInterface).to.equal(true); // bit 2
             });
 
             it("should handle multiple bits set", () => {
                 const networkCommCluster = ClusterMap[49]!;
                 const featureMapAttr = networkCommCluster.attributes[65532];
 
-                // Value 5 = WI (bit 0) + ET (bit 2)
+                // Value 5 = WiFiNetworkInterface (bit 0) + EthernetNetworkInterface (bit 2)
                 const result = convertWebSocketTagBasedToMatter(5, featureMapAttr, networkCommCluster.model) as Record<
                     string,
                     boolean
                 >;
 
                 expect(result).to.be.an("object");
-                expect(result.wi).to.equal(true); // bit 0
-                expect(result.th).to.equal(false); // bit 1
-                expect(result.et).to.equal(true); // bit 2
+                expect(result.wiFiNetworkInterface).to.equal(true); // bit 0
+                expect(result.threadNetworkInterface).to.equal(false); // bit 1
+                expect(result.ethernetNetworkInterface).to.equal(true); // bit 2
             });
 
             it("should handle zero bitmap value", () => {
@@ -252,9 +252,9 @@ describe("Converters", () => {
                 >;
 
                 expect(result).to.be.an("object");
-                expect(result.wi).to.equal(false);
-                expect(result.th).to.equal(false);
-                expect(result.et).to.equal(false);
+                expect(result.wiFiNetworkInterface).to.equal(false);
+                expect(result.threadNetworkInterface).to.equal(false);
+                expect(result.ethernetNetworkInterface).to.equal(false);
             });
         });
     });
@@ -377,15 +377,19 @@ describe("Converters", () => {
             const networkCommCluster = ClusterMap[49]!;
             const featureMapAttr = networkCommCluster.attributes[65532];
 
-            // Features: wi=bit0, th=bit1, et=bit2
-            const original = { wi: true, th: false, et: false };
+            // Features: wiFiNetworkInterface=bit0, threadNetworkInterface=bit1, ethernetNetworkInterface=bit2
+            const original = {
+                wiFiNetworkInterface: true,
+                threadNetworkInterface: false,
+                ethernetNetworkInterface: false,
+            };
             const tagBased = convertMatterToWebSocketTagBased(original, featureMapAttr, networkCommCluster.model);
             const roundTripped = convertWebSocketTagBasedToMatter(tagBased, featureMapAttr, networkCommCluster.model);
 
             // Bitmap round-trip: the conversion to number and back includes all bitmap flags
-            expect((roundTripped as Record<string, boolean>).wi).to.equal(true);
-            expect((roundTripped as Record<string, boolean>).th).to.equal(false);
-            expect((roundTripped as Record<string, boolean>).et).to.equal(false);
+            expect((roundTripped as Record<string, boolean>).wiFiNetworkInterface).to.equal(true);
+            expect((roundTripped as Record<string, boolean>).threadNetworkInterface).to.equal(false);
+            expect((roundTripped as Record<string, boolean>).ethernetNetworkInterface).to.equal(false);
         });
     });
 
