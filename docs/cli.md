@@ -35,6 +35,7 @@ npm run server -- --bluetooth-adapter 0
 | --enable-test-net-dcl | boolean flag | false                  | No       | Enable test-net DCL certificates                     |
 | --bluetooth-adapter   | integer      | null                   | No       | Bluetooth adapter HCI ID (e.g., 0 for hci0)          |
 | --ota-provider-dir    | string       | null                   | No       | Directory for OTA Provider files                     |
+| --disable-dashboard   | boolean flag | false                  | No       | Disable the web dashboard                            |
 
 ### Behavioral Differences from Python Matter Server
 

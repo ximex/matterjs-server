@@ -7,6 +7,7 @@ import {
     LogLevel,
     Logger,
     MatterController,
+    WebServerHandler,
     WebSocketControllerHandler,
 } from "@matter-server/controller";
 import { open, readdir, unlink } from "node:fs/promises";
@@ -177,10 +178,13 @@ async function start() {
         logger.info("Legacy data event handlers configured for node commissioning/decommissioning");
     }
 
-    server = new WebServer({ listenAddresses: cliOptions.listenAddress, port: cliOptions.port }, [
-        new WebSocketControllerHandler(controller, config),
-        new StaticFileHandler(),
-    ]);
+    const handlers: WebServerHandler[] = [new WebSocketControllerHandler(controller, config)];
+    if (!cliOptions.disableDashboard) {
+        handlers.push(new StaticFileHandler());
+    } else {
+        logger.info("Dashboard disabled via CLI flag");
+    }
+    server = new WebServer({ listenAddresses: cliOptions.listenAddress, port: cliOptions.port }, handlers);
 
     await server.start();
 }

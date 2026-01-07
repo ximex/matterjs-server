@@ -50,6 +50,9 @@ export interface CliOptions {
 
     // Server behavior
     disableServerInteractions: boolean;
+
+    // Dashboard configuration
+    disableDashboard: boolean;
 }
 
 function parseIntOption(value: string): number {
@@ -91,7 +94,8 @@ export function parseCliArgs(argv?: string[]): CliOptions {
         .option("--bluetooth-adapter <id>", "Bluetooth adapter HCI ID (e.g., 0 for hci0)", parseIntOption)
         .option("--log-node-ids <ids...>", "Node IDs to filter logs (space-separated)")
         .option("--ota-provider-dir <path>", "Directory for OTA Provider files")
-        .option("--disable-server-interactions", "Disable server cluster interactions", false);
+        .option("--disable-server-interactions", "Disable server cluster interactions", false)
+        .option("--disable-dashboard", "Disable the web dashboard", false);
 
     program.parse(argv);
     const opts = program.opts();
@@ -124,6 +128,7 @@ export function parseCliArgs(argv?: string[]): CliOptions {
         bluetoothAdapter: opts.bluetoothAdapter ?? null,
         otaProviderDir: opts.otaProviderDir ?? null,
         disableServerInteractions: opts.disableServerInteractions,
+        disableDashboard: opts.disableDashboard,
     };
 }
 
