@@ -138,7 +138,7 @@ export function waitForDeviceReady(process: ChildProcess, timeoutMs = 30_000): P
  * Gracefully kills a process and waits for it to exit.
  * Also removes all event listeners to allow clean process exit.
  */
-export async function killProcess(process: ChildProcess | undefined, timeoutMs = 10_000): Promise<void> {
+export async function killProcess(process: ChildProcess | undefined, timeoutMs = 2_000): Promise<void> {
     if (!process || process.exitCode !== null) {
         // Process doesn't exist or already exited - just clean up listeners
         if (process) {
