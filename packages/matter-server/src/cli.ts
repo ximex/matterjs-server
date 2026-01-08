@@ -24,6 +24,7 @@ const VERSION = packageJson.version;
 const DEFAULT_VENDOR_ID = 0xfff1;
 const DEFAULT_PORT = 5580;
 const DEFAULT_STORAGE_PATH = join(homedir(), ".matter_server");
+const DEFAULT_FABRIC_ID = 1;
 
 // Log level enums
 const LOG_LEVELS = ["critical", "error", "warning", "info", "debug", "verbose"] as const;
@@ -95,7 +96,12 @@ export function parseCliArgs(argv?: string[]): CliOptions {
 
     program
         .option("--vendorid <id>", "Vendor ID for the Fabric", parseIntOption, DEFAULT_VENDOR_ID)
-        .option("--fabricid <id>", "Fabric ID for the Fabric (random if not specified)", parseIntOption)
+        .option(
+            "--fabricid <id>",
+            "Fabric ID for the Fabric (random if not specified)",
+            parseIntOption,
+            DEFAULT_FABRIC_ID,
+        )
         .option("--storage-path <path>", "Storage path to keep persistent data", DEFAULT_STORAGE_PATH)
         .option("--port <port>", "TCP Port for WebSocket server", parseIntOption, DEFAULT_PORT)
         .option(

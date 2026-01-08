@@ -84,9 +84,9 @@ Configure the HA instance against this server and have fun :-)
 
 ### Tips
 * to control the storage directory use `--storage-path=.ha1` as parameter to use local dir `.ha1` for storage
-* to limit network interfaces (especially good idea on Macs sometimes) use  `--mdns-networkinterface=en0`
+* to limit network interfaces (especially good idea on Macs sometimes) use  `-primary-interface=en0`
 
-So as example to do both use `npm run server -- --storage-path=.ha1 --mdns-networkinterface=en0` (note the extra "--" to pass parameters to the script).
+So as example to do both use `npm run server -- --storage-path=.ha1 -primary-interface=en0` (note the extra "--" to pass parameters to the script).
 
 It was in general tested with a simply slight bulb on network.
 
@@ -98,7 +98,6 @@ This implementation aims to be API-compatible with the [Python Matter Server](ht
 
 | Feature                 | Python Matter Server                          | Matter.js Server                                                                                           |
 |-------------------------|-----------------------------------------------|------------------------------------------------------------------------------------------------------------|
-| Fabric ID Default       | `--fabricid` defaults to 1                    | Random if not specified                                                                                    |
 | Test Node IDs           | `>= 900000`                                   | `>= 0xFFFF_FFFE_0000_0000` (NodeId range for temporary local NodeIds outside official operational NodeIds) |
 | Fabric Label            | Accepts null/empty to clear                   | Resets to "Home" when null/empty                                                                           |
 | Storage Format          | Single `chip.json` and `{fabricId}.json` file | matter.js native storage (migration supported)                                                             |

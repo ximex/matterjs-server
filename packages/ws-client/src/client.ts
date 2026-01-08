@@ -376,6 +376,12 @@ export class MatterClient {
             this.fireEvent("server_info_updated");
             return;
         }
+
+        if (event.event === "server_shutdown") {
+            this.fireEvent("server_shutdown");
+            this.disconnect();
+            return;
+        }
     }
 
     private fireEvent(event: string) {

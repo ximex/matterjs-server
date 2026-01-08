@@ -67,10 +67,12 @@ export class WebServer {
     }
 
     async stop() {
+        console.log("Stopping webserver...");
         // Unregister handlers first (closes WebSocket connections)
         for (const handler of this.#handlers) {
             await handler.unregister();
         }
+        console.log("Handlers unregistered");
 
         // Then close all HTTP servers and wait for them to finish
         await Promise.allSettled(
@@ -87,6 +89,7 @@ export class WebServer {
                     }),
             ),
         );
+        console.log("Servers closed");
 
         this.#servers = [];
     }

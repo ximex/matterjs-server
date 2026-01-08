@@ -262,34 +262,38 @@ export class WebSocketControllerHandler implements WebServerHandler {
         await this.#commandHandler.connect();
     }
 
-    async unregister() {
+    unregister(): Promise<void> {
+        if (!this.#wss || this.#closed) {
+            return Promise.resolve();
+        }
+
+        this.#closed = true;
         // Send server_shutdown event to all connected clients before closing
-        if (this.#wss) {
-            const shutdownMessage = toBigIntAwareJson({ event: "server_shutdown", data: {} });
-            this.#wss.clients.forEach(client => {
-                if (client.readyState === 1 /* WebSocket.OPEN */) {
-                    try {
-                        client.send(shutdownMessage);
-                    } catch (err) {
-                        logger.warn("Failed to send server_shutdown event to client", err);
-                    }
+        const shutdownMessage = toBigIntAwareJson({ event: "server_shutdown", data: {} });
+        this.#wss.clients.forEach(client => {
+            if (client.readyState === 1 /* WebSocket.OPEN */) {
+                try {
+                    client.send(shutdownMessage, () => {
+                        client.close();
+                    });
+                } catch (err) {
+                    logger.warn("Failed to send server_shutdown event to client", err);
+                }
+            }
+        });
+        console.log("send close to clients");
+
+        const wss = this.#wss;
+        // Wait for the WebSocket server to close properly
+        return new Promise<void>((resolve, reject) => {
+            wss.close(err => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve();
                 }
             });
-        }
-        this.#closed = true;
-
-        // Wait for the WebSocket server to close properly
-        if (this.#wss) {
-            await new Promise<void>((resolve, reject) => {
-                this.#wss!.close(err => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        resolve();
-                    }
-                });
-            });
-        }
+        });
     }
 
     async #handleWebSocketRequest(
