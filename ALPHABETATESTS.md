@@ -13,8 +13,8 @@ The main goals of this phase are to:
 * Verify that the server connects to all online nodes in the fabric, subscribes to all data, and works as expected
 * Confirm that the dashboard shows the correct values for all nodes and works correctly, including OTA, binding setup, and device management (commission, remove nodes)
 * Verify that when adding or removing nodes, the `<long-number>.json` file gets updated
-* (Optional) Add the temporary server location as a Home Assistant Matter integration to a (test?) HA instance and validate functionality there too (all entities are discovered correctly, data updates, etc.)
-* (Optional) After deleting/adding nodes in the Matter Server, copy back the `<long-number>.json` to the Python server, and new nodes should connect there too and show up in HA; deleted nodes should disappear from HA
+* (If possible) Add the temporary server location as a Home Assistant Matter integration to a (test?) HA instance and validate functionality there too (all entities are discovered correctly, data updates, etc.)
+* (If possible) After deleting/adding nodes in the Matter Server, copy back the `<long-number>.json` to the Python server, and new nodes should connect there too and show up in HA; deleted nodes should disappear from HA
 
 ### Phase 2: Official Release for All "Beta" HA Integration Users
 
@@ -77,7 +77,8 @@ In the repository base directory, execute `npm run server -- --storage-path ~/ma
 If your host has multiple network interfaces, you might want to limit the used interface with `--primary-interface <interface-name>` (e.g., `en0` on macOS or `eth0` on Linux).
 See `npm run server -- --help` or the [CLI documentation](./docs/cli.md) for all available parameters and also potential differences from the python-matter-server.
 
-Please use the debug log flag for the alpha test phase to get more detailed logs and also provide these when asking questions.
+> [!Note]
+> Please use the debug log flag for the alpha test phase to get more detailed logs and also provide these when asking questions.
 
 ### Docker Installation (from Docker Hub)
 
