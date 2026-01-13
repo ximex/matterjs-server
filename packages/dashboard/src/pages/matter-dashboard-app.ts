@@ -90,7 +90,7 @@ class MatterDashboardApp extends LitElement {
             return html`
                 <matter-cluster-view
                     .client=${this.client}
-                    .node=${this.client.nodes[parseInt(this._route.path[0], 10)]}
+                    .node=${this.client.nodes[this._route.path[0]]}
                     .endpoint=${parseInt(this._route.path[1], 10)}
                     .cluster=${parseInt(this._route.path[2], 10)}
                 ></matter-cluster-view>
@@ -101,7 +101,7 @@ class MatterDashboardApp extends LitElement {
             return html`
                 <matter-endpoint-view
                     .client=${this.client}
-                    .node=${this.client.nodes[parseInt(this._route.path[0], 10)]}
+                    .node=${this.client.nodes[this._route.path[0]]}
                     .endpoint=${parseInt(this._route.path[1], 10)}
                 ></matter-endpoint-view>
             `;
@@ -111,7 +111,7 @@ class MatterDashboardApp extends LitElement {
             return html`
                 <matter-node-view
                     .client=${this.client}
-                    .node=${this.client.nodes[parseInt(this._route.path[0], 10)]}
+                    .node=${this.client.nodes[this._route.path[0]]}
                 ></matter-node-view>
             `;
         }
