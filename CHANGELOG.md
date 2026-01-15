@@ -9,7 +9,7 @@ This page shows a detailed overview of the changes between versions without the 
 
 ## __WORK IN PROGRESS__
 
-- Enhancement: Re-Adds the energy-polling for eve devices for eve devices that dud not have an update to the Matter attributes
+- Enhancement: Re-adds the energy-polling for Eve devices that did not have an update to the Matter attributes
 
 ## 0.2.3 (2026-01-15)
 
