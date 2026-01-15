@@ -12,7 +12,7 @@ This page shows a detailed overview of the changes between versions without the 
 - Enhancement: Allows a LOG_LEVEL environment variable to control the log level of the Matter server when started via docker container
 - Enhancement: Added some basic cluster commands (OnOff and LevelControl) to the dashboard for more simple testing.
 - Fix: Prevents displaying of duplicate cluster details in the dashboard
-- Fix: Update matter.js to 0.16.3
+- Fix: Update matter.js to 0.16.4
     - Also report attribute updates for bridges correctly (depending on endpoint-structure, they were partially missing)
     - Also accept invalid attribute-ids in the migrated and data from paired nodes
     - Exclude usage of the Thread interaction queue for command invokes, so you need to know yourself what you are doing 
