@@ -41,24 +41,7 @@ class MatterDashboardApp extends LitElement {
 
     protected override firstUpdated(_changedProperties: PropertyValueMap<any> | Map<PropertyKey, unknown>): void {
         super.firstUpdated(_changedProperties);
-        this.client.startListening().then(
-            () => {
-                this._state = "connected";
-                this.client.addEventListener("nodes_changed", () => {
-                    this.requestUpdate();
-                    this.provider.setValue(clone(this.client));
-                });
-                this.client.addEventListener("server_info_updated", () => {
-                    this.provider.setValue(clone(this.client));
-                });
-                this.client.addEventListener("connection_lost", () => {
-                    this._state = "disconnected";
-                });
-            },
-            (_err: MatterError) => {
-                this._state = "error";
-            },
-        );
+        this._connect();
 
         // Handle history changes
         const updateRoute = () => {
@@ -72,16 +55,34 @@ class MatterDashboardApp extends LitElement {
         updateRoute();
     }
 
-    private _reconnect = () => {
-        this._state = "connecting";
+    private _connect() {
         this.client.startListening().then(
             () => {
                 this._state = "connected";
+                this._setupEventListeners();
             },
             (_err: MatterError) => {
                 this._state = "error";
             },
         );
+    }
+
+    private _setupEventListeners() {
+        this.client.addEventListener("nodes_changed", () => {
+            this.requestUpdate();
+            this.provider.setValue(clone(this.client));
+        });
+        this.client.addEventListener("server_info_updated", () => {
+            this.provider.setValue(clone(this.client));
+        });
+        this.client.addEventListener("connection_lost", () => {
+            this._state = "disconnected";
+        });
+    }
+
+    private _reconnect = () => {
+        this._state = "connecting";
+        this._connect();
     };
 
     override render() {
