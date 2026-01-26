@@ -130,6 +130,7 @@ export class MatterController {
             adminFabricLabel: this.#config.fabricLabel,
             adminVendorId: vendorId !== undefined ? VendorId(vendorId) : undefined,
             adminFabricId: fabricId !== undefined ? FabricId(fabricId) : undefined,
+            rootNodeId: NodeId(112233), // TODO Remove when we switch to random IDs
             enableOtaProvider: !this.#disableOtaProvider,
         });
 

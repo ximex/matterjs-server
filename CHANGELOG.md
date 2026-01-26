@@ -7,6 +7,11 @@ This page shows a detailed overview of the changes between versions without the 
 	## __WORK IN PROGRESS__
 -->
 
+## __WORK IN PROGRESS__
+
+- Adjustment: Adhere to the default nodeId 112233 for the controller itself as the Python Matter server did
+- Adjustment: For fresh starts the next node id to be commissioned will be 1 as it was for the Python Matter Server
+
 ## 0.2.9 (2026-01-22)
 
 - Fix: Fixes the datatype for the Eve pressure attribute

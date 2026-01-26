@@ -22,7 +22,7 @@ export class ConfigStorage {
     #storage?: StorageManager;
     #configStore?: StorageContext;
     readonly #data: ConfigData = {
-        nextNodeId: 2, // 2 because controller is Node Id 1
+        nextNodeId: 1,
         fabricLabel: "HomeAssistant",
         wifiSsid: undefined,
         wifiCredentials: undefined,
