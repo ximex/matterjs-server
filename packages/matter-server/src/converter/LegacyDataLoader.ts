@@ -7,7 +7,9 @@
 import {
     CertificateAuthorityConfiguration,
     computeCompressedNodeId,
+    computeServerId,
     Crypto,
+    DEFAULT_SERVER_ID,
     Environment,
     LegacyFabricConfigData,
     LegacyServerFile,
@@ -16,6 +18,7 @@ import {
 import { Millis, Time, Timer } from "@matter/main";
 import { access, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { DEFAULT_FABRIC_ID, DEFAULT_VENDOR_ID } from "../cli.js";
 import { ChipConfigData } from "./index.js";
 import type { OperationalCredentials } from "./types.js";
 
@@ -31,7 +34,7 @@ import type { OperationalCredentials } from "./types.js";
 
 const logger = Logger.get("LegacyDataLoader");
 
-// Attribute paths for OperationalCredentials cluster (62/0x3E)
+// Attribute paths for the OperationalCredentials cluster (62/0x3E)
 const FABRICS_ATTRIBUTE_PATH = "0/62/1"; // Fabrics list
 const CURRENT_FABRIC_INDEX_PATH = "0/62/5"; // CurrentFabricIndex
 
@@ -105,6 +108,18 @@ export function extractMostCommonFabricLabel(serverFile: LegacyServerFile): stri
     return mostCommonLabel;
 }
 
+/**
+ * Determine the server ID for legacy data migration.
+ * The first fabric index gets "server" (aka DEFAULT_SERVER_ID) for backward compatibility.
+ * Other fabrics get "server-<hex(fabricId)>-<hex(vendorId)>".
+ */
+function determineLegacyServerId(fabricId: number | bigint, vendorId: number, isFirstFabric: boolean): string {
+    if (isFirstFabric) {
+        return DEFAULT_SERVER_ID;
+    }
+    return computeServerId(fabricId, vendorId);
+}
+
 /** Result of loading legacy data */
 export interface LegacyData {
     /** Chip config data (fabric certs, sessions, etc.) */
@@ -119,20 +134,43 @@ export interface LegacyData {
     certificateAuthorityConfig?: CertificateAuthorityConfiguration;
     /** Most common fabric label found across all nodes (from attribute 0/62/1) */
     mostCommonFabricLabel?: string;
+    /**
+     * Server ID to use for the matter.js server and storage ("server" aka DEFAULT_SERVER_ID for the first fabric,
+     * "server-<hex>-<hex>" for others)
+     */
+    serverId?: string;
     /** Whether any legacy data was found */
     hasData: boolean;
     /** Error message if loading failed */
     error?: string;
 }
 
+/** Options for loading legacy data */
+export interface LegacyDataLoadOptions {
+    /** Target vendor ID to match (default: 0xFFF1) */
+    vendorId?: number;
+    /** Target fabric ID to match (default: 1) */
+    fabricId?: number;
+}
+
 /**
  * Load legacy Python Matter Server data from a storage directory.
  *
+ * Searches chip.json for a fabric matching the target vendorId and fabricId
+ * (matching Python Matter Server's fabric selection behavior).
+ *
  * Expects:
- * - chip.json: Main configuration file with exactly one fabric (index 1)
+ * - chip.json: Main configuration file with fabric data
  * - <compressedNodeId>.json: Node data file matching the fabric's compressed node ID
  */
-export async function loadLegacyData(env: Environment, storagePath: string): Promise<LegacyData> {
+export async function loadLegacyData(
+    env: Environment,
+    storagePath: string,
+    options?: LegacyDataLoadOptions,
+): Promise<LegacyData> {
+    const targetVendorId = options?.vendorId ?? DEFAULT_VENDOR_ID;
+    const targetFabricId = options?.fabricId ?? DEFAULT_FABRIC_ID;
+
     const result: LegacyData = {
         hasData: false,
     };
@@ -165,24 +203,46 @@ export async function loadLegacyData(env: Environment, storagePath: string): Pro
 
     logger.info(`Loaded legacy chip.json with ${chipConfig.fabrics.size} fabric(s)`);
 
-    // Validate: we expect exactly one fabric with index 1
+    // Search for fabric matching target vendorId AND fabricId (like Python does)
     const fabricIndices = chipConfig.getFabricIndices();
-    if (fabricIndices.length !== 1 || fabricIndices[0] !== 1) {
-        result.error = `Expected exactly one fabric with index 1, found indices: [${fabricIndices.join(", ")}]`;
-        logger.error(result.error);
+    let fabricConfig: LegacyFabricConfigData | undefined;
+    let isFirstFabric = false;
+
+    for (let i = 0; i < fabricIndices.length; i++) {
+        const fabricIndex = fabricIndices[i];
+        const config = chipConfig.getFabricConfig(fabricIndex);
+        if (config && config.rootVendorId === targetVendorId && Number(config.fabricId) === targetFabricId) {
+            fabricConfig = config;
+            isFirstFabric = i === 0; // The first fabric in the list gets "server" ID for backward compatibility
+            logger.debug(
+                `Found matching fabric at index ${fabricIndex}: vendorId=0x${targetVendorId.toString(16)}, fabricId=${targetFabricId}, isFirst=${isFirstFabric}`,
+            );
+            break;
+        }
+    }
+
+    if (!fabricConfig) {
+        // Log what we searched for and what we found
+        const foundFabrics = fabricIndices
+            .map(idx => {
+                const cfg = chipConfig.getFabricConfig(idx);
+                return cfg ? `index=${idx} vendorId=0x${cfg.rootVendorId.toString(16)} fabricId=${cfg.fabricId}` : null;
+            })
+            .filter(Boolean);
+
+        result.error =
+            `No fabric found matching vendorId=0x${targetVendorId.toString(16)} and fabricId=${targetFabricId}. ` +
+            `Available fabrics: [${foundFabrics.join("; ")}]`;
+        logger.warn(result.error);
         return result;
     }
 
-    // Extract fabric config for index 1
-    const fabricConfig = chipConfig.getFabricConfig(1);
-    if (!fabricConfig) {
-        result.error = "Failed to extract fabric config for index 1";
-        logger.error(result.error);
-        return result;
-    }
     result.fabricConfig = fabricConfig;
+    result.serverId = determineLegacyServerId(fabricConfig.fabricId, fabricConfig.rootVendorId, isFirstFabric);
     result.hasData = true;
-    logger.debug(`Extracted fabric config: fabricId=${fabricConfig.fabricId}, nodeId=${fabricConfig.nodeId}`);
+    logger.info(
+        `Extracted fabric config: fabricId=${fabricConfig.fabricId}, vendorId=0x${targetVendorId.toString(16)}, nodeId=${fabricConfig.nodeId}, serverId=${result.serverId}`,
+    );
 
     // Extract operational credentials (credential set 1)
     const credIndices = chipConfig.getOperationalCredentialsIndices();
